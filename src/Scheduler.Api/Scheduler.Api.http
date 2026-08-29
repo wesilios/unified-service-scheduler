@@ -1,6 +1,105 @@
-@Scheduler.Api_HostAddress = http://localhost:5207
+@Scheduler_Api_HostAddress = https://localhost:7048
 
-GET {{Scheduler.Api_HostAddress}}/weatherforecast/
+### Health check
+GET {{Scheduler_Api_HostAddress}}/health
 Accept: application/json
+
+###
+
+### Create an appointment — guest checkout, no login required (Name/Email/Phone identify
+### the customer; a repeat Email+Phone is matched to the existing Customer record).
+### Seeded Dealership id below is the one created by the InitialCreate migration.
+###
+### Correlation-id capture path: X-Correlation-Id is supplied below, so the middleware
+### honors it verbatim — check the response headers, "X-Correlation-Id: local-dev-001"
+### comes straight back. See architecture.md's Assessment Scope Notes for why this
+### matters most in front of an API gateway/load balancer (none exists in this assessment).
+POST {{Scheduler_Api_HostAddress}}/appointments
+Content-Type: application/json
+X-Correlation-Id: local-dev-001
+
+{
+  "customerName": "Juan Dela Cruz",
+  "customerEmail": "juan@example.com",
+  "customerPhone": "+639171234567",
+  "vehicle": "Toyota - Vios - Vios G 2019",
+  "serviceTypeCode": "OIL_CHANGE",
+  "dealershipId": "11111111-1111-1111-1111-111111111111",
+  "technicianId": "33333333-3333-3333-3333-333333333333",
+  "serviceBayId": "44444444-4444-4444-4444-444444444444",
+  "startTime": "2026-09-07T10:00:00"
+}
+
+###
+
+### Check availability for the slot just booked above — should report unavailable
+GET {{Scheduler_Api_HostAddress}}/appointments/availability?dealershipId=11111111-1111-1111-1111-111111111111&technicianId=33333333-3333-3333-3333-333333333333&serviceBayId=44444444-4444-4444-4444-444444444444&serviceTypeCode=OIL_CHANGE&startTime=2026-09-07T10:00:00
+Accept: application/json
+
+###
+
+### Check availability for a free slot (different technician/bay) — should be available
+GET {{Scheduler_Api_HostAddress}}/appointments/availability?dealershipId=11111111-1111-1111-1111-111111111111&technicianId=55555555-5555-5555-5555-555555555555&serviceBayId=66666666-6666-6666-6666-666666666666&serviceTypeCode=OIL_CHANGE&startTime=2026-09-08T10:00:00
+Accept: application/json
+
+###
+
+### Same customer books again (different slot) — should reuse the Customer record from
+### the first booking (same Email+Phone) rather than create a duplicate
+###
+### Correlation-id auto-generate path: no X-Correlation-Id header is sent, so the
+### middleware mints one (Guid.NewGuid()) — check the response headers for a fresh
+### "X-Correlation-Id" value that wasn't in the request.
+POST {{Scheduler_Api_HostAddress}}/appointments
+Content-Type: application/json
+
+{
+  "customerName": "Juan Dela Cruz",
+  "customerEmail": "juan@example.com",
+  "customerPhone": "+639171234567",
+  "vehicle": "Toyota - Vios - Vios G 2019",
+  "serviceTypeCode": "TIRE_CHANGE",
+  "dealershipId": "11111111-1111-1111-1111-111111111111",
+  "technicianId": "55555555-5555-5555-5555-555555555555",
+  "serviceBayId": "66666666-6666-6666-6666-666666666666",
+  "startTime": "2026-09-08T10:00:00"
+}
+
+###
+
+### Invalid: outside dealership operating hours (07:00, before 08:00 open) — expect 400
+POST {{Scheduler_Api_HostAddress}}/appointments
+Content-Type: application/json
+
+{
+  "customerName": "Test Customer",
+  "customerEmail": "test@example.com",
+  "customerPhone": "+639170000000",
+  "vehicle": "Honda - Civic - Civic RS 2021",
+  "serviceTypeCode": "OIL_CHANGE",
+  "dealershipId": "11111111-1111-1111-1111-111111111111",
+  "technicianId": "77777777-7777-7777-7777-777777777777",
+  "serviceBayId": "88888888-8888-8888-8888-888888888888",
+  "startTime": "2026-09-07T07:00:00"
+}
+
+###
+
+### Invalid: empty-GUID technician — caught by FluentValidation before reaching the mock
+### service, expect 400 with validation problem details
+POST {{Scheduler_Api_HostAddress}}/appointments
+Content-Type: application/json
+
+{
+  "customerName": "Test Customer",
+  "customerEmail": "test2@example.com",
+  "customerPhone": "+639170000001",
+  "vehicle": "Honda - Civic - Civic RS 2021",
+  "serviceTypeCode": "OIL_CHANGE",
+  "dealershipId": "11111111-1111-1111-1111-111111111111",
+  "technicianId": "00000000-0000-0000-0000-000000000000",
+  "serviceBayId": "88888888-8888-8888-8888-888888888888",
+  "startTime": "2026-09-07T10:00:00"
+}
 
 ###

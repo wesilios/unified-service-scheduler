@@ -488,3 +488,8 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/
 CLAUDE.md
+
+# SQLite runtime database (this assessment's dev DB — see appsettings.json ConnectionStrings)
+*.db
+*.db-shm
+*.db-wal

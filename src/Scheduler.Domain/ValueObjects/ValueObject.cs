@@ -1,4 +1,4 @@
-﻿namespace Scheduler.Domain;
+namespace Scheduler.Domain.ValueObjects;
 
 public abstract class ValueObject
 {
