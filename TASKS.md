@@ -42,8 +42,9 @@ Status: **IN PROGRESS** (scaffold only)
 ### 2.0 Prerequisite fixes
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 2.0.1 | Resolve `SharedKernel.*` namespace in `Scheduler.Application` (Commands/Handlers/Interfaces/Queries/Dispatcher.cs) — decide: rename to `Scheduler.Application.*` or extract a real `SharedKernel` project | TODO | Currently compiles but namespace doesn't match project — looks unintentional |
-| 2.0.2 | Rename `Appoinment.cs` → `Appointment.cs` | TODO | Typo in filename only; class name is already correct |
+| 2.0.1 | Resolve `SharedKernel.*` namespace in `Scheduler.Application` (Commands/Handlers/Interfaces/Queries/Dispatcher.cs) | DONE | Renamed to `Scheduler.Application.*` in place (not a separate `SharedKernel` project — no cross-project sharing need exists yet). Also collapsed the stray `Handlers.Abstractions` sub-namespace into plain `Handlers` for consistency with `ICommandHandler` |
+| 2.0.2 | Rename `Appoinment.cs` → `Appointment.cs` | DONE | Filename only; class body unchanged (still empty — populating it is 2.1.1) |
+| 2.0.3 | **Discovered while fixing 2.0.1**: `Scheduler.Application.csproj` referenced `Scheduler.Infrastructure` — backwards for Clean Architecture (Infrastructure implements Application's interfaces, so the dependency must point the other way; the old direction would've become circular the moment Infrastructure needed to reference Application back) | DONE | Removed Application→Infrastructure reference; added Infrastructure→Application reference. Added `Microsoft.Extensions.DependencyInjection.Abstractions` package directly to `Scheduler.Application.csproj` since `Dispatcher.cs`'s `GetRequiredService` call had been relying on that package leaking in transitively through the wrong Infrastructure reference. Full solution build verified green after the fix |
 
 ### 2.1 Scheduler.Domain
 | # | Item | Status | Notes |
@@ -51,13 +52,13 @@ Status: **IN PROGRESS** (scaffold only)
 | 2.1.1 | `Appointment` entity (currently empty) | TODO | Holds `TechnicianId`/`ServiceBayId` as plain reference ids (no local FK), free-text `Vehicle` string, `ServiceType` reference, `Dealership` reference, `Customer` reference |
 | 2.1.2 | ~~`Technician` entity~~ | DROPPED | Now external; see `ITechnicianService` in 2.3 |
 | 2.1.3 | ~~`ServiceBay` entity~~ | DROPPED | Now external; see `IServiceBayService` in 2.3 |
-| 2.1.4 | `ServiceType` value/reference (name + duration) | TODO | Sourced via `IServiceTypeProvider`, not a DB entity |
+| 2.1.4 | `ServiceType` value/reference (name + duration) | DONE | Created as `Scheduler.Domain/ServiceType.cs` — minimal record (`Code`, `Description`, `Duration`), no behavior yet. Sourced via `IServiceTypeProvider`, not a DB entity |
 | 2.1.5 | ~~`Vehicle` entity~~ | DROPPED | Free-text field on `Appointment`: `"Make - Model - Trim/Variant+Year"` |
 | 2.1.6 | `Dealership` entity | TODO | Still locally owned (operating hours) |
 | 2.1.7 | `Customer` entity | TODO | |
-| 2.1.8 | Value objects (e.g. time range/availability window) | TODO | |
+| 2.1.8 | Value objects (e.g. time range/availability window) | IN PROGRESS | `TimeRange` created (`Scheduler.Domain/TimeRange.cs`, inherits the existing previously-unused `ValueObject` base) — `Start`/`End` only, no `Overlaps()` yet (deferred to keep this pass scoped to interfaces + their minimal supporting types) |
 | 2.1.9 | Domain services / invariants for availability + double-booking rules (`AppointmentSchedulingPolicy`) | TODO | Based solely on local `Appointment` records for a given `TechnicianId`/`ServiceBayId` |
-| 2.1.10 | Repository interfaces (`IAppointmentRepository`, etc.) | TODO | |
+| 2.1.10 | Repository interfaces (`IAppointmentRepository`, etc.) | DONE | Created in `Scheduler.Application/Interfaces/` (not `Scheduler.Domain`) — matches architecture.md's C4 L3a, which places all repository/external-service interfaces in the Application layer, implemented by Infrastructure. This row's original placement under 2.1 (Domain) was a tracker inconsistency, not the actual design |
 | 2.1.11 | `AppointmentSlot` concept (15-min slot ledger, one row per resource per slot) | TODO | Carries the real concurrency guarantee — see Data Model/Data Flow |
 
 ### 2.2 Scheduler.Application
@@ -67,6 +68,7 @@ Status: **IN PROGRESS** (scaffold only)
 | 2.2.2 | Availability query/use case | TODO | |
 | 2.2.3 | FluentValidation validators for commands | TODO | |
 | 2.2.4 | DI registration for Application layer | TODO | |
+| 2.2.5 | Interfaces implemented by Infrastructure: `IAppointmentRepository`, `ITechnicianService`, `IServiceBayService`, `IServiceTypeProvider`, `INotificationService`, `IAvailabilityCache` | DONE | Created in `Scheduler.Application/Interfaces/`, signatures match architecture.md C4 L4a. `CancellationToken` params added (not shown in the diagram's shorthand, but standard .NET practice). `IServiceTypeProvider.TryGet` is synchronous — Dictionary lookup, no I/O, matches the design rationale. No implementations yet — see 2.3.6–2.3.8 |
 
 ### 2.3 Scheduler.Infrastructure
 | # | Item | Status | Notes |
@@ -76,9 +78,9 @@ Status: **IN PROGRESS** (scaffold only)
 | 2.3.3 | Fix `AddInfrastructureServices` (currently `private`, unreachable) + implement registrations | TODO | |
 | 2.3.4 | EF Core migrations + SQLite provider for this assessment (SQL Server is the production target) | TODO | |
 | 2.3.5 | Cache abstraction (`IMemoryCache` now, Redis-ready per architecture) | TODO | |
-| 2.3.6 | `IServiceBayService` → `MockServiceBayService` (active); `IServiceBayHttpClient` (Refit) defined but left empty, DI registration commented out | TODO | |
-| 2.3.7 | `ITechnicianService` → `MockTechnicianService` (active); `ITechnicianHttpClient` (Refit) defined but left empty, DI registration commented out | TODO | |
-| 2.3.8 | `IServiceTypeProvider` backed by static JSON file loaded at startup | TODO | |
+| 2.3.6 | `IServiceBayService` → `MockServiceBayService` (active); `IServiceBayHttpClient` (Refit) defined but left empty, DI registration commented out | IN PROGRESS | `IServiceBayHttpClient` stub created (`Scheduler.Infrastructure/ExternalClients/`, empty, no Refit attributes yet — no real contract to attribute against). `MockServiceBayService` implementation still TODO |
+| 2.3.7 | `ITechnicianService` → `MockTechnicianService` (active); `ITechnicianHttpClient` (Refit) defined but left empty, DI registration commented out | IN PROGRESS | `ITechnicianHttpClient` stub created (`Scheduler.Infrastructure/ExternalClients/`), same shape as 2.3.6. `MockTechnicianService` implementation still TODO |
+| 2.3.8 | `IServiceTypeProvider` backed by static JSON file loaded at startup | TODO | Interface exists (2.2.5); `JsonServiceTypeProvider` implementation + seed JSON file (per the catalog in Domain Assumptions) still TODO |
 
 ### 2.4 Scheduler.Api
 | # | Item | Status | Notes |
