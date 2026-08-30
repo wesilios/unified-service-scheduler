@@ -1,20 +1,45 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Scheduler.Application.Interfaces;
+using Scheduler.Infrastructure.Caching;
 using Scheduler.Infrastructure.DataAccess;
+using Scheduler.Infrastructure.ExternalServices;
 
 namespace Scheduler.Infrastructure;
 
 public static class ServiceCollectionExtensions
 {
-    private static void AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("SchedulerDb");
-
-        services.AddDbContextFactory<SchedulerDbContext>(options =>
+        services.AddDbContext<SchedulerDbContext>(options =>
         {
-            options.UseSqlite(connectionString);
-            // options.UseSqlServer(connectionString);
+            // Read lazily (not captured into a local before this call) — this delegate runs
+            // at DbContext-resolution time, after WebApplicationFactory's test-only
+            // ConfigureAppConfiguration override has been merged into IConfiguration. Reading
+            // it eagerly here previously captured appsettings.json's value before the test
+            // override applied, silently pointing integration tests at an unmigrated db file.
+            options.UseSqlite(configuration.GetConnectionString("SchedulerDb"));
+            // SQL Server is the production target — swap via connection string + provider:
+            // options.UseSqlServer(configuration.GetConnectionString("SchedulerDb"));
         });
+
+        services.AddMemoryCache();
+
+        services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+        services.AddScoped<IDealershipRepository, DealershipRepository>();
+        services.AddScoped<ICustomerRepository, CustomerRepository>();
+        services.AddScoped<IAvailabilityCache, MemoryAvailabilityCache>();
+
+        // Placeholders for this assessment — see architecture.md Domain Assumptions for
+        // the ITechnicianHttpClient/IServiceBayHttpClient (Refit, unwired) swap-later plan.
+        services.AddSingleton<ITechnicianService, MockTechnicianService>();
+        services.AddSingleton<IServiceBayService, MockServiceBayService>();
+        services.AddSingleton<INotificationService, MockNotificationService>();
+
+        services.AddSingleton<IServiceTypeProvider>(_ =>
+            new JsonServiceTypeProvider(Path.Combine(AppContext.BaseDirectory, "Data", "servicetypes.json")));
+
+        return services;
     }
 }

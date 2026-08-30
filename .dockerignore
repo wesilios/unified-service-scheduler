@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.git/
+.github/
+.dockerignore
+Dockerfile
+docker-compose.yml

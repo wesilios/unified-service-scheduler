@@ -19,6 +19,13 @@
         </PackageReference>
         <PackageReference Include="Refit" Version="14.0.1" />
         <PackageReference Include="Refit.HttpClientFactory" Version="14.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.10" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Include="Data\servicetypes.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
     </ItemGroup>
     
     <ItemGroup>

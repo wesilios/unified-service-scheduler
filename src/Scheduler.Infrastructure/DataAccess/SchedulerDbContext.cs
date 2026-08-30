@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Scheduler.Domain.Entities;
 
 namespace Scheduler.Infrastructure.DataAccess;
 
@@ -13,9 +14,19 @@ public class SchedulerDbContext : DbContext
     {
     }
 
+    public DbSet<Appointment> Appointments => Set<Appointment>();
+    public DbSet<AppointmentSlot> AppointmentSlots => Set<AppointmentSlot>();
+    public DbSet<Dealership> Dealerships => Set<Dealership>();
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    // Each entity's Fluent API configuration lives in its own IEntityTypeConfiguration<T>
+    // class under DataAccess/Configurations/ — keeps this file small as the model grows;
+    // add a new entity's configuration there and it's picked up automatically below.
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(SchedulerDbContext).Assembly);
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
@@ -33,7 +44,10 @@ public class SchedulerDbContext : DbContext
         try
         {
             await SaveChangesAsync(cancellationToken);
-            await _currentTransaction?.CommitAsync(cancellationToken);
+            if (_currentTransaction != null)
+            {
+                await _currentTransaction.CommitAsync(cancellationToken);
+            }
         }
         catch
         {

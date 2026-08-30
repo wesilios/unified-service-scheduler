@@ -1,0 +1,8 @@
+[
+  { "code": "OIL_CHANGE", "description": "Oil Change", "durationMinutes": 30 },
+  { "code": "TIRE_CHANGE", "description": "Tire Change / Replacement", "durationMinutes": 60 },
+  { "code": "BRAKE_INSPECTION", "description": "Brake Inspection", "durationMinutes": 45 },
+  { "code": "INTERIOR_CLEANING", "description": "Interior Cleaning", "durationMinutes": 90 },
+  { "code": "BATTERY_REPLACEMENT", "description": "Battery Replacement", "durationMinutes": 30 },
+  { "code": "WHEEL_ALIGNMENT", "description": "Wheel Alignment", "durationMinutes": 60 }
+]
