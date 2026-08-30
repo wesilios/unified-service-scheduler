@@ -45,10 +45,19 @@ you want to see how the project actually got built.
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- Docker, if you want to try the containerized deployment path (optional)
-- The `dotnet-ef` global tool, only if you're adding a new migration:
-  `dotnet tool install --global dotnet-ef`
+| Tool                                                                            | Required?                              | Needed for                                                                                          |
+| -------------------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)                | **Required**                            | Building, running, and testing the app                                                                |
+| `dotnet-ef` global tool (`dotnet tool install --global dotnet-ef`)              | Optional — required to add a migration | [Database Migrations](#database-migrations) (`dotnet ef migrations add ...`); not needed to build/run/test |
+| [Node.js 18+](https://nodejs.org/) (built-in `fetch`/`crypto.randomUUID()`, no `npm install`) | Optional — required for the concurrency demo script | [Concurrency demo script](#concurrency-demo-script) (`node scripts/concurrency-demo.js`)              |
+| [Postman](https://www.postman.com/downloads/)                                   | Optional — required to run the Postman collection | [Postman collection](#postman-collection)                                                             |
+| Docker                                                                           | Optional — required for the containerized deployment path | [As a Docker container](#as-a-docker-container)                                                       |
+| [Azure CLI](https://learn.microsoft.com/cli/azure/) (`az`)                      | Optional — required for the Azure App Service deploy path | `az webapp up ...` in [Deployment](#deployment)                                                       |
+
+`dotnet tool restore` (uses the .NET SDK above, no separate install) also pulls in
+`dotnet-reportgenerator-globaltool`, pinned in `.config/dotnet-tools.json` — only needed if you
+want to turn coverage output into a browsable HTML report locally; see
+[Testing](#testing).
 
 You don't need to install a database server. This assessment uses SQLite — just a local file,
 created automatically the first time you run the app. See
@@ -88,6 +97,16 @@ executable — and seeds one dealership so there's something to book against:
 | `GET /scalar/v1`                 | Interactive API documentation (Development only)                                 |
 | `GET /openapi/v1.json`           | Raw OpenAPI document (Development only)                                          |
 
+**Response contract**: every response from the two business endpoints above — success or
+failure — is wrapped in one standard envelope: `data` (the real payload, `null` on failure),
+`statusCode`, `message`, and `errors` (an array of `{ errorCode, errorMessage }`, populated
+with one entry per failure — more than one if a request fails validation on several fields at
+once). `/health` is deliberately left in its plain-text form, not wrapped, since it's a
+standard health-check convention consumed by infrastructure, not the same clients parsing the
+booking API's JSON. See architecture.md §14 for the full write-up, including why the wrapping
+logic lives in exactly one place (`ApiResponseWrapperFilter` + `ApiExceptionHandler`, both
+calling `ApiResponseFactory`) rather than being duplicated per controller action.
+
 A Postman collection (`src/Scheduler.Api/Scheduler.Api.postman_collection.json`) has ready-to-run
 requests covering the happy path, every documented failure branch (400/409), and a hands-on
 double-booking demo; a standalone Node.js script (`scripts/concurrency-demo.js`) reproduces the
@@ -115,7 +134,7 @@ why, and the plan for swapping in the real integration later.
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `ConnectionStrings:SchedulerDb` | `appsettings.json`                                     | SQLite by default — see [A note on the database](#a-note-on-the-database)                                                                |
 | `Serilog:*`                     | `serilog.json`                                         | Logging sinks, output template, level overrides — kept out of `Program.cs` deliberately                                                  |
-| `OpenTelemetry` OTLP endpoint   | `serilog.json` (`WriteTo:OpenTelemetry:Args:endpoint`) | Traces/metrics/logs export target; defaults to `http://localhost:4317` and fails quietly if nothing's listening — see architecture.md §7 |
+| `OpenTelemetry` OTLP endpoint   | `serilog.json` (`WriteTo:OpenTelemetry:Args:endpoint`) | Traces/metrics/logs export target; defaults to `http://localhost:4317` and fails quietly if nothing's listening — see architecture.md §10 |
 
 ### Database Migrations
 
@@ -139,8 +158,8 @@ next to the correct one — `dotnet ef` doesn't infer the location from existing
 dotnet test UnifiedSeviceScheduler.sln
 ```
 
-77 tests: 64 unit tests (`tests/Scheduler.UnitTests`) covering Domain, Application, and
-Infrastructure in isolation with Moq, and 13 integration tests
+78 tests: 64 unit tests (`tests/Scheduler.UnitTests`) covering Domain, Application, and
+Infrastructure in isolation with Moq, and 14 integration tests
 (`tests/Scheduler.IntegrationTests`) exercising the real HTTP pipeline against an isolated
 temp SQLite database per test class, via `WebApplicationFactory`. If you're reviewing this
 project and want the fastest path to confidence in it, read the subsections below in order:
@@ -212,6 +231,7 @@ class instance:
 | `CreateAppointment_Sunday_Returns400`                                | Dealership closed Sunday rejected                                                                                                                                                                           |
 | `CreateAppointment_InvalidTechnician_Returns400`                     | Unknown/invalid technician rejected                                                                                                                                                                         |
 | `CreateAppointment_EmptyVehicleField_Returns400`                     | Required-field validation enforced end-to-end, not just at the unit level                                                                                                                                   |
+| `CreateAppointment_MultipleValidationFailures_ReturnsOneErrorPerField` | The `ApiResponse` envelope's `errors` array carries every failure at once — a request invalid on two independent fields comes back with two entries, not just the first one found                       |
 | `CreateAppointment_SameCustomerTwice_ReusesCustomerId`               | Guest checkout dedupes by Email+Phone instead of creating a duplicate `Customer`                                                                                                                            |
 | `CheckAvailability_BookedSlot_ReturnsUnavailable`                    | Availability query reflects a real booking                                                                                                                                                                  |
 | `CheckAvailability_FreeSlot_ReturnsAvailable`                        | Availability query on an open slot                                                                                                                                                                          |
@@ -243,7 +263,7 @@ dotnet test UnifiedSeviceScheduler.sln \
 The `console;verbosity=normal` logger prints a single `Passed` line for the test, which is
 enough to confirm the eight-way race resolved to exactly one winner. To see it fail-safe rather
 than just pass, open `tests/Scheduler.IntegrationTests/AppointmentBookingTests.cs`, find that
-test, and read it alongside architecture.md §9 (Testing Strategy) and the Data Model / Data
+test, and read it alongside architecture.md §12 (Testing Strategy) and the Data Model / Data
 Flow sections — they explain why it's the `UNIQUE(ResourceKind, ResourceId, SlotStart)`
 constraint on `AppointmentSlot` doing the actual work here (see architecture.md's
 [Concurrency Strategy](./architecture.md#concurrency-strategy) section), not the pre-insert
@@ -284,8 +304,8 @@ default, no `--launch-profile` flag needed.)
 
 | Folder                      | What it demonstrates                                                                                                                                                                                                                                                                                               |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Happy Path & Validation     | The same 7 scenarios as the "happy path" rows in the Integration Tests table above — health check, create/re-check availability, repeat-customer dedupe, the two 400 branches. Each request has a `pm.test(...)` assertion, so a full Collection Runner pass gives you a pass/fail summary, not just raw responses |
-| Double Booking (Sequential) | Book a slot, then immediately rebook the identical one — `201` then `409`. Proves the guarantee holds when one request finishes before the next starts — the easy case, not the project's real concurrency requirement (that's the script below)                                                                   |
+| Happy Path & Validation     | The same 7 scenarios as the "happy path" rows in the Integration Tests table above — health check, create/re-check availability, repeat-customer dedupe, the two 400 branches. Each request has `pm.test(...)` assertions checking both the HTTP status and the `ApiResponse` envelope fields (`statusCode`, `data`, `errors[].errorCode`), so a full Collection Runner pass gives you a pass/fail summary, not just raw responses |
+| Double Booking (Sequential) | Book a slot, then immediately rebook the identical one — `201` then `409` (with `errors[0].errorCode` = `Conflict`). Proves the guarantee holds when one request finishes before the next starts — the easy case, not the project's real concurrency requirement (that's the script below)                                                                   |
 
 **Booking times are computed, not hardcoded** — a literal date would eventually land in the
 past, and re-running the collection against your own persisted `scheduler.db` would otherwise
@@ -366,7 +386,7 @@ never has to exist inside the CI/CD pipeline at all:
   connection string ever ends up in a GitHub Actions secret, that's the exact thing this setup
   is meant to avoid.
 
-See architecture.md §6 (Security) for the full write-up. This is documented as a
+See architecture.md §9 (Security) for the full write-up. This is documented as a
 recommendation per Agent.md's scope, not implemented here — there's no real Azure environment
 to point it at in this assessment.
 
@@ -403,7 +423,7 @@ The connection string is deliberately left out of this unit file — see
 [Secrets and connection strings](#secrets-and-connection-strings) for why, and how the app
 should pull it from Azure Key Vault at startup instead.
 
-Put a reverse proxy (nginx/Caddy) in front for TLS termination — architecture.md §6
+Put a reverse proxy (nginx/Caddy) in front for TLS termination — architecture.md §9
 (Security) already assumes this for the production HTTPS story.
 
 **To Azure App Service:**
@@ -446,7 +466,7 @@ relying on the SQLite file long-term.
 from the SQLite file. The natural path is: move to Azure SQL Database (removing the
 local-file dependency entirely), then a standard `Deployment` + `Service` +
 `HorizontalPodAutoscaler` applies with no further changes to the image. This lines up with
-architecture.md §10's Scalability Strategy — the API layer is stateless once the availability
+architecture.md §13's Scalability Strategy — the API layer is stateless once the availability
 cache also moves off in-process `IMemoryCache` to Redis.
 
 ## CI/CD
@@ -469,24 +489,32 @@ other change.
 
 ## AI Collaboration Narrative
 
-I built this with Claude (Anthropic), in one long working session. Here's how it actually
-went — not a generic "AI was used responsibly" line, but the real story, the way I'd tell it
-to another engineer.
+I built this with Claude (Anthropic) across several working sessions, not one sitting — a
+project with this much surface area (a design doc, a Clean Architecture solution, two test
+projects, CI/CD, a response contract added after the fact) doesn't fit in one conversation,
+and I didn't want to fake continuity by pretending it did. Here's how it actually went — not a
+generic "AI was used responsibly" line, but the real story, the way I'd tell it to another
+engineer.
 
-The short version is a loop, not a straight line: write the brief → draft one piece → I check
-it → fix or move on → verify with real evidence → write down what happened. That loop repeats
-for every doc, diagram, and class in this repo:
+The short version is a loop, not a straight line, and it's a loop that survives a session
+ending: write the brief once → each session picks up the next open item from `TASKS.md` →
+draft one piece → I check it → fix or move on → verify with real evidence → write down what
+happened and why, back into `TASKS.md` → next item, same session or a new one. `TASKS.md` is
+what makes that last hop possible — a new session starts by reading it, not by asking me to
+re-explain where things stood:
 
 ```mermaid
 flowchart LR
-    A["Write Agent.md<br/>(brief + priorities)"] --> B["AI drafts one piece<br/>(doc, diagram, or class)"]
+    S["New session starts —<br/>reads TASKS.md"] --> A["Pick up the next<br/>open item"]
+    A --> B["AI drafts one piece<br/>(doc, diagram, or class)"]
     B --> C{"I review it"}
     C -- "looks right" --> D["Build on top of it"]
     C -- "needs a fix" --> E["I push back,<br/>AI revises"]
     E --> C
     D --> F["Verify with real evidence<br/>(tests, curl, Docker run)"]
-    F --> B
     F --> G["TASKS.md records<br/>what happened and why"]
+    G --> A
+    G -. "session ends" .-> S
 ```
 
 ### How I use AI
@@ -509,7 +537,11 @@ Reliability, Simplicity. So when two goals pulled in different directions, there
 guessing which one wins. I also wrote in some ground rules: don't touch a file without asking
 first, write down every assumption, explain the trade-off for anything outside scope, and keep
 a running log of the work so I could pick it back up without reverse-engineering a diff. That
-log is `TASKS.md`.
+log is `TASKS.md`, and it's the reason this being multiple sessions instead of one never cost
+me anything — every session since the first has opened by reading it, not by me re-explaining
+where things stood or the AI guessing. It's a shared task list in the plainest sense: whichever
+of us picks up next, human or AI, reads the same file to know what's done, what's in progress,
+and what was decided along the way.
 
 ### Using the C4 diagrams and data flow to structure and check the logic
 
@@ -556,7 +588,7 @@ examples of what that actually looked like:
 
 ### How I ensured final quality
 
-I held this to the same bar as my own code. Green build, green tests (77/77 — 64 unit, 13
+I held this to the same bar as my own code. Green build, green tests (78/78 — 64 unit, 14
 integration) — non-negotiable before I called anything done, and now enforced automatically on
 every PR via GitHub Actions (see [CI/CD](#cicd)) instead of me remembering to check by hand. I
 didn't take the Docker path on faith either — once I had a Docker daemon available, I built the

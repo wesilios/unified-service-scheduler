@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Scalar.AspNetCore;
 using Scheduler.Api.Extensions;
+using Scheduler.Api.Filters;
 using Scheduler.Api.Middleware;
 using Scheduler.Application;
 using Scheduler.Infrastructure;
@@ -26,10 +27,18 @@ try
     builder.Configuration.AddJsonFile("serilog.json", optional: false, reloadOnChange: true);
     builder.Host.UseSerilog((context, _, configuration) => configuration.ReadFrom.Configuration(context.Configuration));
 
-    builder.Services.AddControllers();
+    // ApiResponseWrapperFilter wraps every controller result (success or failure) in the
+    // standard ApiResponse envelope (Data/StatusCode/Message/Errors) — see its own comment
+    // for why a global filter, not per-controller code, is where that logic lives.
+    builder.Services.AddControllers(options => options.Filters.Add<ApiResponseWrapperFilter>());
     builder.Services.AddOpenApi();
     builder.Services.AddApplicationServices();
     builder.Services.AddInfrastructureServices(builder.Configuration);
+    // ApiExceptionHandler builds the same ApiResponse envelope for unhandled exceptions —
+    // the one path ApiResponseWrapperFilter can't reach (see its own comment). AddProblemDetails
+    // stays registered as the framework-level fallback if a future exception handler doesn't
+    // fully handle a request; ApiExceptionHandler always returns true, so it takes over first.
+    builder.Services.AddExceptionHandler<ApiExceptionHandler>();
     builder.Services.AddProblemDetails();
     builder.Services.AddHealthChecks();
     builder.Services.AddSchedulerObservability(serviceName);
@@ -46,7 +55,8 @@ try
     }
 
     // Unhandled exceptions (anything not already mapped to a 400/409 result in the
-    // controller) become an RFC 9457 ProblemDetails response instead of a raw 500.
+    // controller) become a 500 in the standard ApiResponse envelope — see ApiExceptionHandler,
+    // registered above via AddExceptionHandler<ApiExceptionHandler>().
     app.UseExceptionHandler();
 
     app.UseHttpsRedirection();

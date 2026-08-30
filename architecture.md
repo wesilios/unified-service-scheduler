@@ -2,18 +2,11 @@
 
 ## Table of Contents
 
-- [Original Core requirements](#original-core-requirements)
-- [Assessment Scope Notes](#assessment-scope-notes)
-    - [External systems are mocked](#external-systems-are-mocked)
-    - [Service Type is a static file, not a service](#service-type-is-a-static-file-not-a-service)
-    - [Staff/Admin API is documented, not implemented](#staffadmin-api-is-documented-not-implemented)
-    - [No authentication or authorization implemented](#no-authentication-or-authorization-implemented)
-    - [SQLite instead of SQL Server](#sqlite-instead-of-sql-server)
-    - [No API gateway or load balancer](#no-api-gateway-or-load-balancer)
-    - [No observability backend deployed](#no-observability-backend-deployed)
-    - [No real Azure environment](#no-real-azure-environment)
-    - [Single-instance deployment](#single-instance-deployment)
-- [Domain Clarifications & Assumptions](#domain-clarifications--assumptions)
+- [1. Original Core Requirements](#1-original-core-requirements)
+- [2. Assessment Scope Notes](#2-assessment-scope-notes)
+    - [Service & API scope](#service--api-scope)
+    - [Infrastructure & deployment scope](#infrastructure--deployment-scope)
+- [3. Domain Clarifications & Assumptions](#3-domain-clarifications--assumptions)
     - [Dealership](#dealership)
     - [Service Bay](#service-bay)
     - [Technician](#technician)
@@ -22,13 +15,13 @@
     - [Customer](#customer)
     - [Appointment](#appointment)
     - [Future Extensibility](#future-extensibility)
-- [3. Architecture Principles](#3-architecture-principles)
-- [Key Trade-offs](#key-trade-offs)
-    - [Correctness vs. performance and cost](#correctness-vs-performance-and-cost)
-    - [Security vs. user experience](#security-vs-user-experience)
-    - [Availability vs. correctness](#availability-vs-correctness)
-    - [Simplicity vs. designed guarantees](#simplicity-vs-designed-guarantees)
-- [4. Target Architecture](#4-target-architecture)
+- [4. Architecture Principles](#4-architecture-principles)
+    - [Key Trade-offs](#key-trade-offs)
+        - [Correctness vs. performance and cost](#correctness-vs-performance-and-cost)
+        - [Security vs. user experience](#security-vs-user-experience)
+        - [Availability vs. correctness](#availability-vs-correctness)
+        - [Simplicity vs. designed guarantees](#simplicity-vs-designed-guarantees)
+- [5. Target Architecture](#5-target-architecture)
     - [C4 Level 1 - System Context](#c4-level-1---system-context)
     - [C4 Level 2 - Container](#c4-level-2---container)
     - [C4 Level 3 - Component](#c4-level-3---component)
@@ -38,38 +31,40 @@
     - [C4 Level 4 - Code](#c4-level-4---code)
         - [L4a — Handler & MockService Injection](#l4a--handler--mockservice-injection)
         - [L4b — Domain Model Detail](#l4b--domain-model-detail)
-- [Data Model](#data-model)
-- [Data Flow](#data-flow)
-- [5. Cache Strategy](#5-cache-strategy)
+- [6. Data Model](#6-data-model)
+- [7. Data Flow](#7-data-flow)
+- [8. Cache Strategy](#8-cache-strategy)
     - [What is cached](#what-is-cached)
     - [Initial implementation — in-process `IMemoryCache`](#initial-implementation--in-process-imemorycache)
     - [Future: Redis distributed cache](#future-redis-distributed-cache)
-- [6. Security](#6-security)
+- [9. Security](#9-security)
     - [Current state: Customer Booking API is intentionally unauthenticated](#current-state-customer-booking-api-is-intentionally-unauthenticated)
     - [Abuse mitigation for the unauthenticated booking endpoint](#abuse-mitigation-for-the-unauthenticated-booking-endpoint)
     - [Future: once login is introduced](#future-once-login-is-introduced)
     - [Transport security](#transport-security)
     - [Secrets and connection strings](#secrets-and-connection-strings)
     - [Explicit non-goals](#explicit-non-goals)
-- [7. Observability](#7-observability)
+- [10. Observability](#10-observability)
     - [Structured logging](#structured-logging)
     - [Domain-specific metrics](#domain-specific-metrics)
     - [Tracing](#tracing)
     - [Correlation IDs](#correlation-ids)
     - [Health checks](#health-checks)
     - [Backend](#backend)
-- [8. Technology Choices](#8-technology-choices)
-- [9. Testing Strategy](#9-testing-strategy)
+- [11. Technology Choices](#11-technology-choices)
+- [12. Testing Strategy](#12-testing-strategy)
     - [Unit tests — target >80% coverage on Domain, Application, Infrastructure](#unit-tests--target-80-coverage-on-domain-application-infrastructure)
     - [Integration tests — edge cases, not a re-run of unit tests](#integration-tests--edge-cases-not-a-re-run-of-unit-tests)
     - [Coverage & CI](#coverage--ci)
-- [10. Future Evolution](#10-future-evolution)
+- [13. Future Evolution](#13-future-evolution)
     - [Concurrency Strategy](#concurrency-strategy)
     - [Scalability Strategy](#scalability-strategy)
     - [Production Capacity Triggers](#production-capacity-triggers)
     - [Reliability](#reliability)
+- [14. API Response Contract](#14-api-response-contract)
+    - [Where the wrapping logic lives — and why only one place](#where-the-wrapping-logic-lives--and-why-only-one-place)
 
-## Original Core requirements:
+## 1. Original Core Requirements
 
 1. Resource Constrained Booking: Allow a user to request a service appointment for a specific vehicle, service type, and
    dealership at a desired time.
@@ -78,7 +73,7 @@
 3. Confirmed Appointment Record: Upon success, create a persistent Appointment record associating the customer, vehicle,
    technician, and service bay.
 
-## Assessment Scope Notes
+## 2. Assessment Scope Notes
 
 This document describes a system designed for realistic production use, but only a slice of it actually runs for this
 assessment. That gap — mocked external systems, an unauthenticated API, SQLite instead of SQL Server, no gateway in
@@ -86,44 +81,48 @@ front, no deployed observability backend — recurs throughout the sections belo
 inline every time it's relevant, this section is the one canonical explanation; every other section links back here
 instead of repeating it.
 
-### External systems are mocked
+### Service & API scope
+
+#### External systems are mocked
 
 Technician, Service Bay, and Notification are modeled as external systems reached over HTTP in production. For this
 assessment each is backed by a `Mock*` implementation returning static/deterministic data instead —
 see [Service Bay](#service-bay) and [Technician](#technician) for the specific interfaces and the Refit-based
 real-client stubs left in place for the future swap.
 
-### Service Type is a static file, not a service
+#### Service Type is a static file, not a service
 
 `IServiceTypeProvider` is backed by a JSON file loaded into an in-memory dictionary at startup —
 see [Service Type](#service-type) — not a call to a real service, network or otherwise.
 
-### Staff/Admin API is documented, not implemented
+#### Staff/Admin API is documented, not implemented
 
 The system context includes a Dealership Staff/Manager actor and a Staff/Admin API surface (C4 L1/L2), but only the
 Customer Booking API has working endpoints. The Staff/Admin surface exists in this document to keep the two-API-surface
-authorization design (see [Security](#6-security)) complete, not because it's built.
+authorization design (see [Security](#9-security)) complete, not because it's built.
 
-### No authentication or authorization implemented
+#### No authentication or authorization implemented
 
 The Customer Booking API is open — no auth middleware is registered, no auth package is referenced in any
-`.csproj`. [Security](#6-security) documents a suggested JWT/claims design per Agent.md's explicit scoping ("suggestion
+`.csproj`. [Security](#9-security) documents a suggested JWT/claims design per Agent.md's explicit scoping ("suggestion
 authorization/authentication assumptions"), not a built one.
 
-### SQLite instead of SQL Server
+### Infrastructure & deployment scope
+
+#### SQLite instead of SQL Server
 
 SQLite is used here because it's file-based and needs no separate database service — a lighter environment for an
 assessment than standing up SQL Server/Docker. SQL Server (Azure SQL Database in production) is the actual target; EF
 Core's provider abstraction makes the swap a connection-string change plus one `UseSqlServer(...)` call, with the schema
-and `AppointmentSlot` concurrency design unchanged (see [Data Model](#data-model)).
+and `AppointmentSlot` concurrency design unchanged (see [Data Model](#6-data-model)).
 
-### No API gateway or load balancer
+#### No API gateway or load balancer
 
 Production deployments of this kind normally sit behind an API gateway or load balancer. That component matters for
 correlation specifically because it's the first hop a request makes: if it assigns (or forwards) a correlation id, every
 downstream service — including this one — can be tied back to the same originating request across service boundaries,
 not just within one process. That's the scenario `CorrelationIdMiddlewareExtensions`
-(see [Observability §7](#7-observability)) is built for: honor an inbound `X-Correlation-Id` if the caller (gateway,
+(see [Observability §10](#10-observability)) is built for: honor an inbound `X-Correlation-Id` if the caller (gateway,
 load balancer, or another upstream service) already set one, and only mint a new one if it didn't.
 
 This assessment has no gateway or load balancer in front of the API — every real request that reaches this deployment
@@ -132,29 +131,29 @@ auto-generate branch, not the capture branch, is what actually fires here; the c
 deliberately (`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to prove
 the behavior is correct for the topology it's designed for.
 
-### No observability backend deployed
+#### No observability backend deployed
 
 The OpenTelemetry SDK/API layer is wired in — logs, metrics, and traces are all emitted — but no OTLP collector or APM
 backend is deployed for this assessment; traces/metrics currently export to console only.
-See [Observability §7](#7-observability).
+See [Observability §10](#10-observability).
 
-### No real Azure environment
+#### No real Azure environment
 
-Key Vault and Managed Identity are documented recommendations (see [Security §6](#6-security), README's "Secrets and
+Key Vault and Managed Identity are documented recommendations (see [Security §9](#9-security), README's "Secrets and
 connection strings") for where secrets should live in production, not something deployed or verified against a real
 Azure subscription for this assessment.
 
-### Single-instance deployment
+#### Single-instance deployment
 
 The current design — one instance, `AppointmentSlot`'s unique constraint, `IMemoryCache` — is deliberately sufficient at
-this assessment's scale. [Future Evolution §10](#10-future-evolution) treats horizontal scaling, distributed caching,
+this assessment's scale. [Future Evolution §13](#13-future-evolution) treats horizontal scaling, distributed caching,
 and multi-region concerns as metrics-driven future work, not near-term requirements.
 
-## Domain Clarifications & Assumptions
+## 3. Domain Clarifications & Assumptions
 
 The assessment requirements leave some dealership scheduling rules unspecified. To keep the implementation focused while
 maintaining a realistic domain model, the following assumptions are made. (Several of the assumptions below reference a
-standing scope limitation — see [Assessment Scope Notes](#assessment-scope-notes) for the canonical explanation of
+standing scope limitation — see [Assessment Scope Notes](#2-assessment-scope-notes) for the canonical explanation of
 each.)
 
 ### Dealership
@@ -278,7 +277,7 @@ Future constraints may include:
 - Resilience around external Technician/Service Bay validation calls (caching validated IDs, circuit breaker, retry
   policy) to reduce the TOCTOU window between validation and booking.
 
-## 3. Architecture Principles
+## 4. Architecture Principles
 
 The system will initially be implemented as a modular monolith using ASP.NET Core and a relational database. The
 architecture is intentionally designed so that infrastructure components such as caching can be introduced progressively
@@ -296,13 +295,13 @@ The primary principles are:
 7. Preserve the same application-level caching abstraction so that switching from memory cache to Redis requires minimal
    code changes.
 
-## Key Trade-offs
+### Key Trade-offs
 
 Every non-trivial decision below costs something. This section is a scannable index of every real trade-off in this
 design — each one is also marked **Trade-off:** inline at the section it belongs to, so it's visible both from here and
 in place, not buried in a paragraph.
 
-### Correctness vs. performance and cost
+#### Correctness vs. performance and cost
 
 - **External resource validation is a point-in-time check, not a foreign key** — opens a TOCTOU window between
   validating a `TechnicianId`/`ServiceBayId` and committing the
@@ -311,12 +310,12 @@ in place, not buried in a paragraph.
   authority; staleness costs an extra false-negative 409, never a false
   booking. [Cache Strategy → Initial implementation](#initial-implementation--in-process-imemorycache)
 - **The pre-insert overlap check is a fast-fail optimization, not the correctness mechanism** — same staleness/TOCTOU
-  exposure as above, resolved the same way: the DB constraint is what's actually authoritative. [Data Flow](#data-flow)
+  exposure as above, resolved the same way: the DB constraint is what's actually authoritative. [Data Flow](#7-data-flow)
 - **`TechnicianId`/`ServiceBayId` existence checks are deliberately *not* cached** — the mirror image of the point
   above: a round-trip cost is paid on every booking specifically to avoid serving a stale "valid" result for a resource
   the external system has since deactivated. [Cache Strategy → What is cached](#what-is-cached)
 
-### Security vs. user experience
+#### Security vs. user experience
 
 - **Guest checkout is frictionless but unverified** — no login means nothing confirms a caller supplying a given
   Email+Phone is actually that
@@ -326,7 +325,7 @@ in place, not buried in a paragraph.
 - **CAPTCHA stops bots, not the identity-spoofing risk above — and directly conflicts with the frictionless-checkout
   goal.** [Security → Abuse mitigation](#abuse-mitigation-for-the-unauthenticated-booking-endpoint)
 
-### Availability vs. correctness
+#### Availability vs. correctness
 
 - **Notification is best-effort — a failed send never blocks or rolls back an already-valid booking** — a customer can
   end up with a confirmed appointment and no confirmation message. [Future Evolution → Reliability](#reliability)
@@ -334,13 +333,13 @@ in place, not buried in a paragraph.
   rather than letting it through; correctness is chosen over keeping the booking flow
   available. [Future Evolution → Reliability](#reliability)
 
-### Simplicity vs. designed guarantees
+#### Simplicity vs. designed guarantees
 
 - **Retry-safety today is accidental, not designed** — it falls out of client-supplied resource ids/time colliding with
   the same `AppointmentSlot` unique constraint, not a purpose-built `Idempotency-Key`
   mechanism. [Future Evolution → Reliability](#reliability)
 
-## 4. Target Architecture
+## 5. Target Architecture
 
 ### C4 Level 1 - System Context
 
@@ -627,7 +626,7 @@ classDiagram
     AppointmentSchedulingPolicy ..> Appointment : validates
 ```
 
-## Data Model
+## 6. Data Model
 
 Reflects the revised assumptions: `Appointment` is the only aggregate with real relational shape, plus a supporting
 `AppointmentSlot` ledger table that carries the concurrency guarantee. `TechnicianId`/`ServiceBayId` are plain scalar
@@ -705,7 +704,7 @@ Slot granularity is 15 minutes, matching the Service Type catalog durations abov
 Service Type duration isn't a multiple of 15 minutes, it rounds up to the next slot boundary for conflict-checking
 purposes only; the customer-facing duration is unaffected.
 
-## Data Flow
+## 7. Data Flow
 
 Step-by-step request flow for `CreateAppointmentCommand`, including the failure branches — not just the happy path.
 
@@ -775,7 +774,7 @@ case — it is **not** the concurrency-safety mechanism. Two requests can both p
 `AppointmentSlot` unique constraint from the Data Model section; the handler treats that constraint violation the same
 as a detected overlap (409 Conflict).
 
-## 5. Cache Strategy
+## 8. Cache Strategy
 
 Caching in this system is a read-performance optimization only — it is never treated as the authority for booking
 correctness (Architecture Principle #2). The `AppointmentSlot` unique constraint from the Data Model section is what
@@ -820,12 +819,12 @@ timeline, but a scaling decision.
   registered in place of `MemoryAvailabilityCache` — no changes to `CreateAppointmentCommandHandler` or any caller,
   since they depend only on the interface (same swap-later pattern used for the DB provider and the Mock/Refit
   services).
-- **Observability tie-in**: the 409-conflict-rate metric from §7 is the signal to watch. A rising 409 rate under a
+- **Observability tie-in**: the 409-conflict-rate metric from §10 is the signal to watch. A rising 409 rate under a
   multi-instance deployment can mean either genuine contention (expected, handled correctly) or cross-instance cache
-  staleness (a sign Redis is overdue) — distinguishing the two is easier once tracing (§7) shows whether the read-check
+  staleness (a sign Redis is overdue) — distinguishing the two is easier once tracing (§10) shows whether the read-check
   reported "available" right before the DB rejected the insert.
 
-## 6. Security
+## 9. Security
 
 This section documents **suggested authentication/authorization assumptions**, per Agent.md's explicit scoping (
 "Security — suggestion authorization/authentication assumptions"). Nothing here is implemented
@@ -851,55 +850,10 @@ Two additional recommendations for `POST /appointments` specifically — the end
 design above. Neither is implemented in this assessment; both apply now, independent of whether login is ever
 introduced.
 
-**Rate limiting.** Best enforced at the [API gateway or load balancer](#no-api-gateway-or-load-balancer) — e.g. Azure
-API Management or Azure Front Door's rate-limiting policies — rather than inside this service: a gateway rejects excess
-traffic before it costs the application anything, and the same policy then covers every service behind it, not just this
-one. This assessment has no such component in front of it, so nothing is implemented here. If a gateway is never
-introduced, ASP.NET Core's built-in `Microsoft.AspNetCore.RateLimiting` middleware is the fallback, scoped specifically
-to `POST /appointments`.
-
-**Trade-off:**
-
-- The gateway-level recommendation above provides **zero protection today** — it depends on a component this assessment
-  doesn't have. Until a gateway exists, `POST /appointments` is unprotected against volumetric abuse.
-- The in-service fallback (`Microsoft.AspNetCore.RateLimiting`) only tracks requests **per instance**.
-  Under [horizontal scaling](#single-instance-deployment), an attacker spread across instances gets a multiple of the
-  intended limit, not the limit itself — a shared store (e.g. Redis-backed counter) would be needed to close that gap,
-  adding another moving part.
-- Rate limits keyed on IP address risk throttling legitimate customers who share one (corporate NAT, mobile
-  carrier-grade NAT) — a limit generous enough to avoid that is also generous enough to blunt its own effectiveness
-  against a determined abuser.
-
-**CAPTCHA on booking creation.** Because the endpoint requires no login, it's also the one most exposed to scripted
-abuse — spam bookings, or automated probing of the `Email`+`Phone` guest-checkout match. A CAPTCHA challenge (e.g.
-Cloudflare Turnstile, hCaptcha, or reCAPTCHA) on the booking form is the standard mitigation:
-
-- **Frontend**: renders the CAPTCHA widget and, once solved, receives a short-lived token from the CAPTCHA provider.
-- **Backend**: the token travels as one extra property on `CreateAppointmentRequest` (e.g. `CaptchaToken`) — **never**
-  on `CreateAppointmentCommand`. It would be verified server-side against the provider's verification endpoint (e.g.
-  Turnstile's `siteverify`) before the request is ever mapped to a Command and dispatched; a missing or failed
-  verification short-circuits with 400, the same way a FluentValidation failure does today. This keeps the check at the
-  layer it belongs to: CAPTCHA is an edge/anti-abuse concern, not domain data, so `Scheduler.Application` and
-  `Scheduler.Domain` should never see a `CaptchaToken` — the same boundary already used for keeping `TechnicianId`/
-  `ServiceBayId` validation external to the domain.
-- Applies to the mutating endpoint (`POST /appointments`) only; the read-only `GET /appointments/availability` doesn't
-  create state, so it isn't a target for CAPTCHA specifically, though it still benefits from rate limiting above.
-
-**Trade-off:**
-
-- **It does not fix the risk [Current state](#current-state-customer-booking-api-is-intentionally-unauthenticated)
-  actually calls out.** A human who genuinely knows (or guesses) a real customer's Email+Phone solves the CAPTCHA
-  trivially and books under their identity anyway — CAPTCHA stops *scripts*, not the *identity-spoofing* gap, which only
-  real authentication closes. Don't read "CAPTCHA added" as "the Email+Phone risk is handled."
-- **It directly cuts against the stated product
-  goal.** [Current state](#current-state-customer-booking-api-is-intentionally-unauthenticated) frames no-login as a
-  deliberate frictionless-checkout decision; a CAPTCHA challenge is friction, full stop. This is a real cost to weigh
-  against the abuse it prevents, not a free addition.
-- **It adds a new external dependency** — same category of risk as the mocked Technician/Service Bay systems
-  ([External systems are mocked](#external-systems-are-mocked)): the provider's verification endpoint being slow or down
-  needs an explicit fail-open (allow booking, accept the abuse-risk window) or fail-closed (block bookings entirely)
-  decision; neither is free, and this document doesn't pick one — it would need to be made before this is built, not
-  defaulted to implicitly in code.
+| Mitigation | Mechanism (not implemented) | Cost / Trade-off |
+| --- | --- | --- |
+| **Rate limiting** | Preferred: enforce at the [API gateway or load balancer](#no-api-gateway-or-load-balancer) (e.g. Azure API Management / Front Door) — rejects excess traffic before it costs the app anything, and the same policy covers every service behind it. Fallback if no gateway exists: ASP.NET Core's built-in `Microsoft.AspNetCore.RateLimiting`, scoped to `POST /appointments`. | The gateway path gives **zero protection today** — this assessment has no gateway. The in-service fallback only tracks requests **per instance**: under [horizontal scaling](#single-instance-deployment) an attacker spread across instances gets a multiple of the intended limit, not the limit itself (a shared, e.g. Redis-backed, counter would close that gap). IP-keyed limits also risk throttling legitimate customers behind a shared NAT (corporate, mobile carrier-grade). |
+| **CAPTCHA on booking creation** | A CAPTCHA widget (Cloudflare Turnstile / hCaptcha / reCAPTCHA) on the frontend produces a short-lived token that travels as `CaptchaToken` on `CreateAppointmentRequest` only — **never** on `CreateAppointmentCommand` — verified server-side (e.g. Turnstile's `siteverify`) before the request is mapped and dispatched; a missing/failed verification short-circuits with 400, same as a FluentValidation failure. `Scheduler.Application`/`Scheduler.Domain` never see a `CaptchaToken` — the same boundary already used for keeping `TechnicianId`/`ServiceBayId` validation external to the domain. Applies to `POST /appointments` only — `GET /appointments/availability` doesn't create state. | Does **not** fix the [identity-spoofing risk](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a human who genuinely knows (or guesses) a real customer's Email+Phone solves the CAPTCHA trivially and books under their identity anyway; CAPTCHA stops *scripts*, not that gap. Directly cuts against the frictionless-checkout goal stated in [Current state](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a real cost, not a free addition. Adds a new external dependency (same category of risk as [the mocked Technician/Service Bay systems](#external-systems-are-mocked)): the provider's verification endpoint being slow or down needs an explicit fail-open/fail-closed decision this document doesn't make. |
 
 ### Future: once login is introduced
 
@@ -958,9 +912,9 @@ are deliberately outside this section's scope, which is bounded to authenticatio
 limiting and CAPTCHA are covered above as abuse mitigations for the specific unauthenticated endpoint, rather than
 treated as out of scope.
 
-## 7. Observability
+## 10. Observability
 
-This section is what makes Cache Strategy §5's stated principle ("use observability metrics to drive architectural
+This section is what makes Cache Strategy §8's stated principle ("use observability metrics to drive architectural
 decisions rather than premature optimization") actionable rather than aspirational.
 
 ### Structured logging
@@ -994,7 +948,7 @@ Via `System.Diagnostics.Metrics` (`Meter`/`Counter`/`Histogram`) through the Ope
 - **Booking outcome rate** — counts of `CreateAppointmentCommand` results by status (201 / 400 / 409). The headline
   business metric.
 - **409-conflict rate** — a direct proxy for contention on `AppointmentSlot`. This is the exact trigger signal Cache
-  Strategy §5 refers to ("introduce Redis when production metrics demonstrate a need") and the Future Extensibility
+  Strategy §8 refers to ("introduce Redis when production metrics demonstrate a need") and the Future Extensibility
   TOCTOU-mitigation item.
 - **External mock-service call latency** for `ITechnicianService`/`IServiceBayService` — instrumented at the interface
   boundary, so the metric survives unchanged when the mocks are swapped for the real `I*HttpClient` implementations.
@@ -1045,7 +999,7 @@ This section commits only to the OpenTelemetry SDK/API layer (logs, metrics, and
 exporter/backend unspecified ([Assessment Scope Notes](#no-observability-backend-deployed)). Any OTLP-compatible backend
 (self-hosted or cloud) can be wired in later without changing instrumentation code.
 
-## 8. Technology Choices
+## 11. Technology Choices
 
 Each already-decided technology, with the reason tied to this project's actual constraints rather than generic
 justification — per the doc's stated principle that architecture decisions should explain why, not merely what.
@@ -1058,8 +1012,8 @@ justification — per the doc's stated principle that architecture decisions sho
 | Refit                                                   | For the future real `ITechnicianHttpClient`/`IServiceBayHttpClient` — typed HTTP clients generated from interfaces keep the mock→real swap a pure DI registration change, no hand-written HTTP plumbing.                                                                                          |
 | xUnit                                                   | Matches the existing `Scheduler.UnitTests.csproj` scaffold and Agent.md's preference; `[Theory]` fits the many operating-hours/overlap edge cases well. Also backs `Scheduler.IntegrationTests` (`Microsoft.AspNetCore.Mvc.Testing`).                                                             |
 | Moq                                                     | Mocking library for Application-layer unit tests (isolating handlers from `IAppointmentRepository` etc.) — distinct from the assessment's `Mock*` classes, which are production-shaped substitutes for external systems, not test doubles.                                                        |
-| OpenTelemetry                                           | Single vendor-neutral API across logs/metrics/traces (see §7), avoiding backend lock-in while meeting Agent.md's "OpenTelemetry-compatible" requirement.                                                                                                                                          |
-| Serilog                                                 | Structured-logging framework decoupled from any specific backend via its sink ecosystem — OpenTelemetry, Application Insights/Log Analytics, Sentry, ELK/Logstash, Grafana Loki are all a config change away, not a rewrite (see §7). Configuration lives in `serilog.json`, not `Program.cs`.        |
+| OpenTelemetry                                           | Single vendor-neutral API across logs/metrics/traces (see §10), avoiding backend lock-in while meeting Agent.md's "OpenTelemetry-compatible" requirement.                                                                                                                                          |
+| Serilog                                                 | Structured-logging framework decoupled from any specific backend via its sink ecosystem — OpenTelemetry, Application Insights/Log Analytics, Sentry, ELK/Logstash, Grafana Loki are all a config change away, not a rewrite (see §10). Configuration lives in `serilog.json`, not `Program.cs`.        |
 | Scalar                                                  | Interactive API documentation UI (`/scalar/v1`) over the built-in `AddOpenApi()` OpenAPI document — chosen over classic Swashbuckle since it consumes the same built-in .NET OpenAPI generator already in use, rather than adding a second, competing OpenAPI generator.                          |
 | Docker                                                  | Needed for containerized deployment (Task 4) regardless of DB choice; SQLite being file-based means no separate DB service is needed in the compose setup for this assessment.                                                                                                                    |
 | Mermaid                                                 | Already used for every diagram in this document (C4 L1–L4, ER diagram, sequence diagram); renders natively in most doc tooling with no external diagramming dependency.                                                                                                                           |
@@ -1068,7 +1022,7 @@ justification — per the doc's stated principle that architecture decisions sho
 live-verified — real traces/metrics exported to console, structured logs carrying `CorrelationId`/`TraceId`, interactive
 docs at `/scalar/v1`. The Refit HTTP clients remain the one deliberately-still-a-stub item (see Domain Assumptions).
 
-## 9. Testing Strategy
+## 12. Testing Strategy
 
 Two test projects, matching the solution's Clean Architecture layering: `Scheduler.UnitTests` (exists today, still
 holding the default template stub) and `Scheduler.IntegrationTests` (not yet created — see `TASKS.md` 3.1). Both use
@@ -1116,13 +1070,13 @@ not mocked away:
 the >80% threshold as a CI gate. This connects directly to Task 4's GitHub Actions requirement — the coverage gate runs
 on every PR, not just locally.
 
-## 10. Future Evolution
+## 13. Future Evolution
 
 Each subsection below is a metrics-driven scenario, not a roadmap commitment — consistent with Agent.md's "do not
 sacrifice correctness for premature optimization" and "do not introduce infrastructure merely because it is popular."
 The current design is a deliberately sufficient [single-instance deployment](#single-instance-deployment); nothing below
 should be built until the named metric shows it's needed. Cache strategy's future evolution (Redis) is already covered
-in §5 and isn't repeated here.
+in §8 and isn't repeated here.
 
 ### Concurrency Strategy
 
@@ -1130,13 +1084,13 @@ The `AppointmentSlot` unique constraint (Data Model) is correct at any scale —
 scale-dependent optimization. What changes with scale is how *gracefully* the system behaves as contention rises, not
 whether it stays correct:
 
-- **Trigger**: §7's 409-conflict-rate metric rising in a pattern that looks like retries/timeouts rather than genuinely
+- **Trigger**: §10's 409-conflict-rate metric rising in a pattern that looks like retries/timeouts rather than genuinely
   popular slots being contested by different customers.
 - **Scenario 1 (moderate load)**: add client-facing retry-with-backoff guidance and a "suggest next available slot"
   response on 409, rather than a bare error — smooths transient bursts without weakening the underlying guarantee.
 - **Scenario 2 (hot resources)**: if specific `TechnicianId`/`ServiceBayId` rows show sustained DB lock-wait time (a
   small number of popular technicians/bays absorbing most contention), consider serializing writes per resource — e.g. a
-  per-resource distributed lock (Redis, once introduced per §5) or a queue partitioned by `ResourceId` — only once
+  per-resource distributed lock (Redis, once introduced per §8) or a queue partitioned by `ResourceId` — only once
   lock-wait metrics justify it, not preemptively.
 - **Scenario 3 (multi-region, out of scope — [Assessment Scope Notes](#single-instance-deployment))**: a single unique
   index can't enforce cross-region uniqueness. Would require either a single-writer region per `DealershipId` (natural
@@ -1146,12 +1100,12 @@ whether it stays correct:
 ### Scalability Strategy
 
 - **API layer**: `AppointmentsController` is stateless once `IAvailabilityCache` moves off in-process `IMemoryCache`
-  (§5's Redis trigger is the actual blocker for horizontal scale-out, not the API code itself). Trigger: Architecture
+  (§8's Redis trigger is the actual blocker for horizontal scale-out, not the API code itself). Trigger: Architecture
   Principle #5 — sustained CPU/memory/latency/throughput pressure (see Production Capacity Triggers below for concrete
   thresholds).
 - **Database read scaling**: once availability-check read volume significantly exceeds booking write volume,
   `GetOverlappingAsync` reads can move to a read replica while `AppointmentSlot`/`Appointment` writes stay on the
-  primary. A stale replica read is safe by the same argument as §5's cache staleness: it can only produce an extra
+  primary. A stale replica read is safe by the same argument as §8's cache staleness: it can only produce an extra
   false-negative (a needless 409 or retry), never an incorrect booking, since the primary's unique constraint remains
   authoritative.
 - **Partitioning**: if a single dealership's volume alone approaches DB capacity, `DealershipId` is a natural shard
@@ -1163,11 +1117,11 @@ whether it stays correct:
 
 ### Production Capacity Triggers
 
-Concrete metric → action mapping, tying directly to the metrics already defined in §7 Observability:
+Concrete metric → action mapping, tying directly to the metrics already defined in §10 Observability:
 
 | Metric                                                                                  | Threshold / Signal                                                   | Action                                                                       |
 |-----------------------------------------------------------------------------------------|----------------------------------------------------------------------|------------------------------------------------------------------------------|
-| 409-conflict rate                                                                       | Sustained rise not explained by legitimate multi-customer contention | Check for cross-instance cache staleness → introduce Redis (§5)              |
+| 409-conflict rate                                                                       | Sustained rise not explained by legitimate multi-customer contention | Check for cross-instance cache staleness → introduce Redis (§8)              |
 | API instance CPU/memory                                                                 | Sustained above ~70–80%                                              | Scale out API instances horizontally (Principle #5)                          |
 | Availability-check (`GetOverlappingAsync`) p95 latency                                  | Exceeds target (e.g. 200ms)                                          | Add DB read replica, review indexes, or lean more on the availability cache  |
 | External validation call latency (`ITechnicianService`/`IServiceBayService`, once real) | Exceeds target                                                       | Add circuit breaker/retry (Polly), or cache validated ids with a short TTL   |
@@ -1198,3 +1152,78 @@ Concrete metric → action mapping, tying directly to the metrics already define
   rather than being a designed mechanism; an explicit `Idempotency-Key` header (returning the original 201 instead of a
   409 on a detected retry)
   would be a cleaner UX and is a reasonable future refinement, not required for correctness today.
+
+## 14. API Response Contract
+
+Every response from the Customer Booking API — success or failure, every endpoint — is wrapped in one standard
+envelope, `data`/`statusCode`/`message`/`errors`, so a consumer never has to branch on "which shape does this
+endpoint return" before parsing a response:
+
+```jsonc
+// 201 Created
+{
+  "data": { "id": "...", "customerId": "...", "slots": [ /* ... */ ] },
+  "statusCode": 201,
+  "message": "Success",
+  "errors": []
+}
+
+// 400 Bad Request — one failure
+{
+  "data": null,
+  "statusCode": 400,
+  "message": "Requested time is outside dealership operating hours.",
+  "errors": [
+    { "errorCode": "OutsideOperatingHours", "errorMessage": "Requested time is outside dealership operating hours." }
+  ]
+}
+
+// 400 Bad Request — multiple failures in the same request
+{
+  "data": null,
+  "statusCode": 400,
+  "message": "One or more validation errors occurred.",
+  "errors": [
+    { "errorCode": "CustomerEmail", "errorMessage": "'Customer Email' is not a valid email address." },
+    { "errorCode": "Vehicle", "errorMessage": "Vehicle description must not be empty." }
+  ]
+}
+```
+
+`errorCode` is always machine-readable — either the FluentValidation property name (`CustomerEmail`, `Vehicle`,
+`TechnicianId`) for a validation failure, or the `AppointmentResultStatus`/`AvailabilityStatus` enum name
+(`OutsideOperatingHours`, `Conflict`, `InvalidResource`) for a business-rule failure — never the human sentence, so a
+caller can branch on it without string-matching a message that might get reworded later. `errors` being an array
+rather than a single object is deliberate: FluentValidation doesn't cascade-stop across independent `RuleFor` chains
+(see `CreateAppointmentCommandValidator`), so a single request can fail on several fields at once, and the envelope
+reports all of them in one round trip instead of forcing a client to fix-and-resubmit one error at a time.
+
+`/health` is the one endpoint deliberately left out of this envelope — it's a standard health-check convention
+(plain `"Healthy"`/`"Unhealthy"` text), consumed by infrastructure (load balancers, orchestrators) that expects that
+convention, not by the same clients parsing the booking API's JSON.
+
+### Where the wrapping logic lives — and why only one place
+
+The requirement driving the implementation here wasn't just "wrap responses in this shape" but "wrap them from
+exactly one place" — every controller action returning its own hand-built `{ data, statusCode, message, errors }`
+object would work today and silently drift the moment someone changes the shape in one action and forgets the
+other four. Two ASP.NET Core extension points cover every response, and both call the same construction logic
+rather than duplicating it:
+
+- **`ApiResponseWrapperFilter`** (`Scheduler.Api/Filters/`) — a globally registered `IAsyncResultFilter`
+  (`AddControllers(options => options.Filters.Add<ApiResponseWrapperFilter>())` in `Program.cs`). It runs after
+  every controller action, inspects whatever `ObjectResult` the action produced — a domain entity via `Ok`/`Created`,
+  a `ProblemDetails` via `Problem(...)`, a `ValidationProblemDetails` via `ValidationProblem(...)` or ASP.NET Core's
+  own automatic model-binding-failure 400 — and rewrites `objectResult.Value` into the envelope. Controllers keep
+  using ordinary framework result helpers; none of them know the envelope exists.
+- **`ApiExceptionHandler`** (`Scheduler.Api/Middleware/`) — an `IExceptionHandler` registered via
+  `AddExceptionHandler<ApiExceptionHandler>()`, invoked by `app.UseExceptionHandler()`. This is the one path
+  `ApiResponseWrapperFilter` structurally cannot cover: an unhandled exception short-circuits past the MVC result
+  pipeline entirely, straight into exception-handling middleware, before any result filter runs.
+
+Both call **`ApiResponseFactory`** (`Success(...)`/`Failure(...)`) to actually build the `ApiResponse` record — the
+filter and the exception handler differ in *when* they run and *what* triggered them, not in how the envelope gets
+assembled. That's the DRY boundary: two integration points because ASP.NET Core's request pipeline genuinely has
+two different places a response can originate from, but one factory, because there's exactly one correct shape for
+an `ApiResponse` regardless of which path produced it. See Agent.md's "API Response Contract" section for the rule
+this implements and `src/Scheduler.Api/Contracts/ApiResponse.cs` for the exact type.
