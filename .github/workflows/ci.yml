@@ -39,3 +39,21 @@ jobs:
         with:
           name: test-results
           path: ./TestResults
+
+      - name: Generate HTML coverage report
+        if: always()
+        run: >
+          dotnet tool restore &&
+          dotnet tool run reportgenerator
+          -reports:"TestResults/**/coverage.cobertura.xml"
+          -targetdir:"TestResults/CoverageReport"
+          -reporttypes:Html
+          -classfilters:"-Microsoft.AspNetCore.OpenApi.Generated"
+          -title:"Unified Service Scheduler - Coverage Report"
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: ./TestResults/CoverageReport

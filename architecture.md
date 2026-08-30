@@ -129,7 +129,7 @@ load balancer, or another upstream service) already set one, and only mint a new
 This assessment has no gateway or load balancer in front of the API — every real request that reaches this deployment
 arrives directly from the client, without an `X-Correlation-Id` already attached. In practice that means the
 auto-generate branch, not the capture branch, is what actually fires here; the capture branch is demonstrated
-deliberately (`Scheduler.Api.http`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to prove
+deliberately (`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to prove
 the behavior is correct for the topology it's designed for.
 
 ### No observability backend deployed
@@ -1027,8 +1027,9 @@ This assessment has [no API gateway or load balancer in front of it](#no-api-gat
 the auto-generate branch is what fires for every real request that reaches this deployment. The capture branch is still
 real code, exercised deliberately rather than by accident:
 
-- `Scheduler.Api.http` sends `X-Correlation-Id: local-dev-001` on the first booking request (capture) and omits the
-  header on a later one (auto-generate), with comments calling out which branch each demonstrates.
+- `Scheduler.Api.postman_collection.json` sends `X-Correlation-Id: postman-demo-001` on the "Create appointment (happy
+  path)" request (capture, asserted by a `pm.test`) and omits the header on the "repeat customer" request
+  (auto-generate).
 - `Scheduler.IntegrationTests/AppointmentBookingTests.cs` has `Request_WithCorrelationIdHeader_EchoesItBack` (capture)
   and `Request_WithoutCorrelationIdHeader_AutoGeneratesOne` (auto-generate), asserting on the response header in both
   cases.

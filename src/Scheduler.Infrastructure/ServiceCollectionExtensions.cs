@@ -12,13 +12,16 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("SchedulerDb");
-
         services.AddDbContext<SchedulerDbContext>(options =>
         {
-            options.UseSqlite(connectionString);
+            // Read lazily (not captured into a local before this call) — this delegate runs
+            // at DbContext-resolution time, after WebApplicationFactory's test-only
+            // ConfigureAppConfiguration override has been merged into IConfiguration. Reading
+            // it eagerly here previously captured appsettings.json's value before the test
+            // override applied, silently pointing integration tests at an unmigrated db file.
+            options.UseSqlite(configuration.GetConnectionString("SchedulerDb"));
             // SQL Server is the production target — swap via connection string + provider:
-            // options.UseSqlServer(connectionString);
+            // options.UseSqlServer(configuration.GetConnectionString("SchedulerDb"));
         });
 
         services.AddMemoryCache();
