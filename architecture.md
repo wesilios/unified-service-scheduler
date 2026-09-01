@@ -83,12 +83,14 @@ instead of repeating it.
 
 ### Service & API scope
 
-#### External systems are mocked
+#### Internal services and Notification are mocked
 
-Dealership, Technician, Service Bay, and Notification are modeled as external systems reached over HTTP in
-production. For now, each is backed by a `Mock*` implementation returning static/deterministic data instead —
-see [Dealership](#dealership), [Service Bay](#service-bay), and [Technician](#technician) for the specific interfaces
-and the Refit-based real-client stubs left in place for the future swap.
+Dealership, Technician, and Service Bay are modeled as this platform's own internal services, reached over HTTP in
+production (see [C4 L1](#c4-level-1---system-context) for the internal/external distinction). Notification is a
+genuine external, third-party dependency (e.g. SendGrid for email). All four are backed by a `Mock*` implementation
+returning static/deterministic data for now — see [Dealership](#dealership), [Service Bay](#service-bay), and
+[Technician](#technician) for the specific interfaces and the Refit-based real-client stubs left in place for the
+future swap.
 
 #### Service Type is a static file, not a service
 
@@ -116,20 +118,30 @@ locally than standing up SQL Server/Docker. SQL Server (Azure SQL Database in pr
 Core's provider abstraction makes the swap a connection-string change plus one `UseSqlServer(...)` call, with the schema
 and `AppointmentSlot` concurrency design unchanged (see [Data Model](#6-data-model)).
 
-#### No API gateway or load balancer
+#### No API Gateway deployed
 
-Production deployments of this kind normally sit behind an API gateway or load balancer. That component matters for
-correlation specifically because it's the first hop a request makes: if it assigns (or forwards) a correlation id, every
-downstream service — including this one — can be tied back to the same originating request across service boundaries,
-not just within one process. That's the scenario `CorrelationIdMiddlewareExtensions`
-(see [Observability §10](#10-observability)) is built for: honor an inbound `X-Correlation-Id` if the caller (gateway,
-load balancer, or another upstream service) already set one, and only mint a new one if it didn't.
+Now that Dealership/Technician/Service Bay are recognized as their own internal services rather than data this
+application owns (see [Domain Assumptions](#3-domain-clarifications--assumptions)), the target architecture names this
+component explicitly rather than leaving it a generic "gateway or load balancer": an **API Gateway** in front of every
+backend surface (Scheduler API, and eventually the Provider Portal), documented in C4 L1/L2. It's the one front door
+both the Customer Client and the future Provider Portal Client would call through, and it's a reasonable place to
+route Scheduler API's own outbound Dealership/Technician/Service Bay calls too, once those move off `Mock*` and become
+real deployed services — but that routing detail is optional and doesn't change today's implementation, since it's
+already abstracted behind the `I*Provider` interfaces (see Architecture Principle #8) regardless of how many hops sit
+between Scheduler API and the real service.
 
-This deployment has no gateway or load balancer in front of the API — every real request that reaches this deployment
-arrives directly from the client, without an `X-Correlation-Id` already attached. In practice that means the
-auto-generate branch, not the capture branch, is what actually fires here; the capture branch is demonstrated
-deliberately (`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to prove
-the behavior is correct for the topology it's designed for.
+This component also matters for correlation specifically, because it's the first hop a request makes: if it assigns
+(or forwards) a correlation id, every downstream service — including Scheduler API — can be tied back to the same
+originating request across service boundaries, not just within one process. That's the scenario
+`CorrelationIdMiddlewareExtensions` (see [Observability §10](#10-observability)) is built for: honor an inbound
+`X-Correlation-Id` if the caller (gateway or another upstream service) already set one, and only mint a new one if it
+didn't.
+
+**Not implemented today** — there is no gateway deployed in front of this API; every real request arrives directly
+from the client, without an `X-Correlation-Id` already attached. In practice that means the auto-generate branch, not
+the capture branch, is what actually fires here; the capture branch is demonstrated deliberately
+(`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to
+prove the behavior is correct for the topology it's designed for.
 
 #### No observability backend deployed
 
@@ -158,10 +170,10 @@ each.)
 
 ### Dealership
 
-- Dealerships are owned and managed by an **external Dealership system**; this application does not own Dealership
+- Dealerships are owned and managed by an **internal Dealership service**; this application does not own Dealership
   master data — the same ownership pattern as Service Bay and Technician below, extended to Dealership itself now that
   it is recognized as its own bounded context rather than a table this app seeds.
-- At booking time, the requested `DealershipId` is resolved against that external system via
+- At booking time, the requested `DealershipId` is resolved against that internal service via
   `IDealershipProvider.GetAsync`, returning the dealership's name and operating hours (or `null` if the id is unknown,
   which fails the booking the same way an invalid `TechnicianId`/`ServiceBayId` does today).
 - **Operating hours is Dealership's own business rule, not Scheduler's.** `Dealership.IsWithinOperatingHours(TimeRange)`
@@ -177,9 +189,9 @@ each.)
 
 ### Service Bay
 
-- Service Bays are owned and managed by an **external Service Bay system**; this application does not own Service Bay
+- Service Bays are owned and managed by an **internal Service Bay service**; this application does not own Service Bay
   master data.
-- At booking time, the requested `ServiceBayId` is validated against that external system (existence/validity check
+- At booking time, the requested `ServiceBayId` is validated against that internal service (existence/validity check
   only).
 - Availability is still determined **locally**: a `ServiceBayId` cannot be allocated to overlapping appointments across
   this application's own `Appointment` records.
@@ -189,13 +201,13 @@ each.)
   DI registration commented out for now — swapping in a real `ServiceBayService : IServiceBayProvider` built
   on `IServiceBayHttpClient` requires no changes to callers.
 - Additional real-world constraints such as bay-specific capabilities, vehicle size/fit, equipment availability,
-  maintenance periods, or temporary closures remain out of scope, owned by the external system if ever needed.
+  maintenance periods, or temporary closures remain out of scope, owned by the internal service if ever needed.
 
 ### Technician
 
-- Technicians are owned and managed by an **external Technician system**; this application does not own Technician
+- Technicians are owned and managed by an **internal Technician service**; this application does not own Technician
   master data.
-- At booking time, the requested `TechnicianId` is validated against that external system (existence/validity check
+- At booking time, the requested `TechnicianId` is validated against that internal service (existence/validity check
   only).
 - Availability is still determined **locally**: a `TechnicianId` cannot be allocated to overlapping appointments across
   this application's own `Appointment` records.
@@ -293,7 +305,7 @@ Future constraints may include:
 - Service Bay maintenance and temporary closures (owned externally).
 - Different service durations based on vehicle model or configuration.
 - Buffer time between appointments.
-- Resilience around external Dealership/Technician/Service Bay validation calls (caching validated IDs, circuit
+- Resilience around internal Dealership/Technician/Service Bay validation calls (caching validated IDs, circuit
   breaker, retry policy) to reduce the TOCTOU window between validation and booking.
 
 ## 4. Architecture Principles
@@ -339,7 +351,7 @@ in place, not buried in a paragraph.
   exposure as above, resolved the same way: the DB constraint is what's actually authoritative. [Data Flow](#7-data-flow)
 - **`TechnicianId`/`ServiceBayId` existence checks are deliberately _not_ cached** — the mirror image of the point
   above: a round-trip cost is paid on every booking specifically to avoid serving a stale "valid" result for a resource
-  the external system has since deactivated. [Cache Strategy → What is cached](#what-is-cached)
+  the internal service has since deactivated. [Cache Strategy → What is cached](#what-is-cached)
 
 #### Security vs. user experience
 
@@ -378,13 +390,16 @@ Two actors call into the system, each through a distinct API surface (see C4 L2)
 API, and Dealership Staff/Manager, via a separate **Provider Portal** — the surface where a dealership manages its own
 Technicians and Service Bays. The Provider Portal is documented for system-context completeness but is not implemented
 ([Implementation Scope Notes](#provider-portal-is-documented-not-implemented)) — see Security for why the two surfaces
-are scoped differently. The system depends on four external systems, all mocked
-([Implementation Scope Notes](#external-systems-are-mocked)): a **Dealership system** (resolves a Dealership's name and
-operating hours), a Technician system and a Service Bay system (validate the resource identifiers on a booking
-request), and a Notification system (sends confirmations). Dealership joining this list as an external system —
-rather than a table this application seeds and owns — is the key change from the earlier design: Scheduler no longer
-treats Dealership as local data, only as another resource it validates and reads from, the same footing as Technician
-and Service Bay already had.
+are scoped differently.
+
+**Internal vs. external is a real distinction, not just a naming choice.** Dealership, Technician, and Service Bay are
+this same product's own bounded contexts — separate deployables, same company, same platform. Notification is
+different in kind: a genuine third party (e.g. SendGrid for email) this platform has no control over. Calling all four
+"external systems" (the earlier wording) blurred that distinction; the diagram below groups the first three inside an
+enterprise boundary and leaves Notification outside it, and Domain Assumptions/Data Flow use "internal service" for
+the first three from here on. All four remain mocked at the current implementation stage regardless
+([Implementation Scope Notes](#internal-services-and-notification-are-mocked)) — the internal/external label is about who owns the
+system, not about what's built today.
 
 ```mermaid
 C4Context
@@ -393,19 +408,21 @@ C4Context
     Person(customer, "Customer", "Books a vehicle service appointment")
     Person(staff, "Dealership Staff / Manager", "Manages their own Technicians and Service Bays. Not implemented yet.")
 
-    System(scheduler, "Unified Service Scheduler", "Validates the requested Dealership/Technician/Service Bay, checks availability against its own booking records, and confirms appointments.")
+    Enterprise_Boundary(platform, "Unified Service Scheduler Platform") {
+        System(scheduler, "Scheduler (Booking) Service", "Validates the requested Dealership/Technician/Service Bay, checks availability against its own booking records, and confirms appointments.")
+        System(dealership, "Dealership Service", "Internal, mocked. Resolves Dealership name and operating hours.")
+        System(technician, "Technician Service", "Internal, mocked. Validates TechnicianId.")
+        System(servicebay, "Service Bay Service", "Internal, mocked. Validates ServiceBayId.")
+    }
 
-    System_Ext(dealership, "Dealership System", "External, mocked. Resolves Dealership name and operating hours.")
-    System_Ext(technician, "Technician System", "External, mocked. Validates TechnicianId.")
-    System_Ext(servicebay, "Service Bay System", "External, mocked. Validates ServiceBayId.")
-    System_Ext(notification, "Notification System", "External, mocked. Sends appointment confirmations.")
+    System_Ext(notification, "Notification Service", "External, third-party (e.g. SendGrid for email), mocked. Sends appointment confirmations.")
 
     Rel(customer, scheduler, "Requests appointment", "Customer Booking API")
     Rel(staff, scheduler, "Manages Technicians/Service Bays", "Provider Portal — not implemented")
-    Rel(scheduler, dealership, "Resolves Dealership", "HTTP, mocked")
-    Rel(scheduler, technician, "Validates TechnicianId", "HTTP, mocked")
-    Rel(scheduler, servicebay, "Validates ServiceBayId", "HTTP, mocked")
-    Rel(scheduler, notification, "Sends confirmation", "HTTP, mocked")
+    Rel(scheduler, dealership, "Resolves Dealership", "Internal HTTP, mocked")
+    Rel(scheduler, technician, "Validates TechnicianId", "Internal HTTP, mocked")
+    Rel(scheduler, servicebay, "Validates ServiceBayId", "Internal HTTP, mocked")
+    Rel(scheduler, notification, "Sends confirmation", "External HTTP, mocked")
 ```
 
 ### C4 Level 2 - Container
@@ -417,7 +434,16 @@ Provider Portal is documented as a placeholder only
 Application/Domain/Infrastructure code running in-process (see C4 L3 for that breakdown — the two-surface split is a
 routing/authorization concern, not a code-layer concern, so it is **not** carried into L3 or L4). The container depends
 on one persistent store — which now holds only `Appointment`/`AppointmentSlot`, since Dealership no longer has a local
-table — and four external systems, all mocked ([Implementation Scope Notes](#external-systems-are-mocked)).
+table — three internal services, and one external (third-party) service, all mocked
+([Implementation Scope Notes](#internal-services-and-notification-are-mocked)).
+
+An **API Gateway** sits on the Scheduler API → internal-services leg — documented, not implemented
+([Implementation Scope Notes](#no-api-gateway-deployed)). Today, `Scheduler API` calls each `Mock*Provider`
+in-process, so this container doesn't exist yet in any deployable form; but once Dealership/Technician/Service Bay are
+real independently-deployed services, one gateway hop replaces three separate direct integrations — a single place to
+apply routing, auth, and retry/circuit-breaker policy for all three, rather than repeating that plumbing three times.
+This is a separate concern from the Customer/Provider Portal-facing edge — those clients still call `Scheduler API`
+directly, unchanged.
 
 ```mermaid
 C4Container
@@ -433,21 +459,24 @@ C4Container
         ContainerDb(db, "SQLite", "Database — current", "Source of truth: Appointment, AppointmentSlot only. SQL Server is the target for production; SQLite used here for a lightweight, Docker-free setup via EF Core's provider abstraction.")
     }
 
+    Container_Ext(gateway, "API Gateway", "Documented, not implemented", "Single hop Scheduler API would call through to reach the internal Dealership/Technician/Service Bay services once those are real, instead of three separate direct integrations. Also the correlation-id-assigning edge component once a frontend gateway exists.")
+
     ContainerDb_Ext(cache, "Redis", "Cache (future)", "Introduced when scale metrics require it — see Cache Strategy")
-    System_Ext(dealership, "Dealership System", "External, mocked")
-    System_Ext(technician, "Technician System", "External, mocked")
-    System_Ext(servicebay, "Service Bay System", "External, mocked")
-    System_Ext(notification, "Notification System", "External, mocked")
+    Container_Ext(dealershipSvc, "Dealership Service", "Internal, mocked")
+    Container_Ext(technicianSvc, "Technician Service", "Internal, mocked")
+    Container_Ext(servicebaySvc, "Service Bay Service", "Internal, mocked")
+    System_Ext(notification, "Notification Service", "External, third-party (e.g. SendGrid), mocked")
 
     Rel(customer, clientCustomer, "Uses")
     Rel(staff, clientStaff, "Uses")
     Rel(clientCustomer, api, "HTTPS/JSON")
     Rel(clientStaff, api, "HTTPS/JSON — not implemented")
     Rel(api, db, "Reads/writes", "SQL, EF Core")
-    Rel(api, dealership, "Resolves Dealership", "HTTP, mocked")
-    Rel(api, technician, "Validates TechnicianId", "HTTP, mocked")
-    Rel(api, servicebay, "Validates ServiceBayId", "HTTP, mocked")
-    Rel(api, notification, "Sends confirmation", "HTTP, mocked")
+    Rel(api, gateway, "Resolves Dealership / validates Technician & Service Bay through", "Internal HTTP — future; direct mocked calls today")
+    Rel(gateway, dealershipSvc, "Routes to")
+    Rel(gateway, technicianSvc, "Routes to")
+    Rel(gateway, servicebaySvc, "Routes to")
+    Rel(api, notification, "Sends confirmation", "External HTTP, mocked")
     Rel(api, cache, "Future", "distributed cache")
 ```
 
@@ -540,7 +569,7 @@ C4Component
 ### C4 Level 4 - Code
 
 The same pattern applies throughout: every external dependency is an interface with a `Mock*` implementation injected
-([Implementation Scope Notes](#external-systems-are-mocked)). Split into two diagrams by concern, same rationale as L3.
+([Implementation Scope Notes](#internal-services-and-notification-are-mocked)). Split into two diagrams by concern, same rationale as L3.
 
 #### L4a — Handler & MockService Injection
 
@@ -898,7 +927,7 @@ check.
   in-memory `Dictionary<string, ServiceType>` once at startup (see Domain Assumptions and C4 L4a). Genuinely static for
   the process lifetime, so no invalidation or TTL is needed for it.
 - **Trade-off — not cached:** `TechnicianId`/`ServiceBayId` existence checks. Caching these would risk serving a stale
-  "valid" result for a resource the external system has since deactivated; at the current scale, the extra
+  "valid" result for a resource the internal service has since deactivated; at the current scale, the extra
   round-trip per booking is an acceptable cost. Worth revisiting under Future Extensibility if the external services
   become a measured bottleneck.
 
@@ -958,8 +987,8 @@ introduced.
 
 | Mitigation                      | Mechanism (not implemented)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Cost / Trade-off                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Rate limiting**               | Preferred: enforce at the [API gateway or load balancer](#no-api-gateway-or-load-balancer) (e.g. Azure API Management / Front Door) — rejects excess traffic before it costs the app anything, and the same policy covers every service behind it. Fallback if no gateway exists: ASP.NET Core's built-in `Microsoft.AspNetCore.RateLimiting`, scoped to `POST /appointments`.                                                                                                                                                                                                                                                                                                                           | The gateway path gives **zero protection today** — there's no gateway in front of this deployment yet. The in-service fallback only tracks requests **per instance**: under [horizontal scaling](#single-instance-deployment) an attacker spread across instances gets a multiple of the intended limit, not the limit itself (a shared, e.g. Redis-backed, counter would close that gap). IP-keyed limits also risk throttling legitimate customers behind a shared NAT (corporate, mobile carrier-grade).                                                                                                                                                                                                                                                                |
-| **CAPTCHA on booking creation** | A CAPTCHA widget (Cloudflare Turnstile / hCaptcha / reCAPTCHA) on the frontend produces a short-lived token that travels as `CaptchaToken` on `CreateAppointmentRequest` only — **never** on `CreateAppointmentCommand` — verified server-side (e.g. Turnstile's `siteverify`) before the request is mapped and dispatched; a missing/failed verification short-circuits with 400, same as a FluentValidation failure. `Scheduler.Application`/`Scheduler.Domain` never see a `CaptchaToken` — the same boundary already used for keeping `TechnicianId`/`ServiceBayId` validation external to the domain. Applies to `POST /appointments` only — `GET /appointments/availability` doesn't create state. | Does **not** fix the [identity-spoofing risk](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a human who genuinely knows (or guesses) a real customer's Email+Phone solves the CAPTCHA trivially and books under their identity anyway; CAPTCHA stops _scripts_, not that gap. Directly cuts against the frictionless-checkout goal stated in [Current state](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a real cost, not a free addition. Adds a new external dependency (same category of risk as [the mocked Technician/Service Bay systems](#external-systems-are-mocked)): the provider's verification endpoint being slow or down needs an explicit fail-open/fail-closed decision this document doesn't make. |
+| **Rate limiting**               | Preferred: enforce at the [API gateway or load balancer](#no-api-gateway-deployed) (e.g. Azure API Management / Front Door) — rejects excess traffic before it costs the app anything, and the same policy covers every service behind it. Fallback if no gateway exists: ASP.NET Core's built-in `Microsoft.AspNetCore.RateLimiting`, scoped to `POST /appointments`.                                                                                                                                                                                                                                                                                                                           | The gateway path gives **zero protection today** — there's no gateway in front of this deployment yet. The in-service fallback only tracks requests **per instance**: under [horizontal scaling](#single-instance-deployment) an attacker spread across instances gets a multiple of the intended limit, not the limit itself (a shared, e.g. Redis-backed, counter would close that gap). IP-keyed limits also risk throttling legitimate customers behind a shared NAT (corporate, mobile carrier-grade).                                                                                                                                                                                                                                                                |
+| **CAPTCHA on booking creation** | A CAPTCHA widget (Cloudflare Turnstile / hCaptcha / reCAPTCHA) on the frontend produces a short-lived token that travels as `CaptchaToken` on `CreateAppointmentRequest` only — **never** on `CreateAppointmentCommand` — verified server-side (e.g. Turnstile's `siteverify`) before the request is mapped and dispatched; a missing/failed verification short-circuits with 400, same as a FluentValidation failure. `Scheduler.Application`/`Scheduler.Domain` never see a `CaptchaToken` — the same boundary already used for keeping `TechnicianId`/`ServiceBayId` validation external to the domain. Applies to `POST /appointments` only — `GET /appointments/availability` doesn't create state. | Does **not** fix the [identity-spoofing risk](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a human who genuinely knows (or guesses) a real customer's Email+Phone solves the CAPTCHA trivially and books under their identity anyway; CAPTCHA stops _scripts_, not that gap. Directly cuts against the frictionless-checkout goal stated in [Current state](#current-state-customer-booking-api-is-intentionally-unauthenticated) — a real cost, not a free addition. Adds a new external dependency (same category of risk as [the mocked Technician/Service Bay systems](#internal-services-and-notification-are-mocked)): the provider's verification endpoint being slow or down needs an explicit fail-open/fail-closed decision this document doesn't make. |
 
 ### Future: once login is introduced
 
@@ -1087,7 +1116,7 @@ downstream service — this one included — can be tied back to the same origin
 service boundaries, not just within a single process. Always minting a fresh id at this service would break that chain
 the moment there's more than one hop in front of it.
 
-This deployment has [no API gateway or load balancer in front of it](#no-api-gateway-or-load-balancer), so in practice
+This deployment has [no API gateway or load balancer in front of it](#no-api-gateway-deployed), so in practice
 the auto-generate branch is what fires for every real request that reaches this deployment. The capture branch is still
 real code, exercised deliberately rather than by accident:
 

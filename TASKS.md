@@ -196,6 +196,34 @@ Documentation: added `## 14. API Response Contract` to architecture.md (envelope
 
 ---
 
+---
+
+## Task 5 — Bounded-context refactor: Dealership as an internal service, Customer as a Value Object
+
+Status: **IN PROGRESS** — `architecture.md` (design) updated and reviewed; code/tests/Postman/README not yet touched
+
+Context: originally reasoned through as a "multi-tenant SaaS" framing (Dealership as tenant, a Provider Portal for
+dealership staff), then simplified per user direction — keep the *outcome* (Dealership/Technician/Service Bay are
+this platform's own internal services, not local Scheduler data) without the multi-tenancy vocabulary or complexity.
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | Domain Assumptions: Dealership rewritten as internal-service-owned, not local data | DONE | `IDealershipProvider`/`MockDealershipProvider` pattern, same shape as Technician/ServiceBay |
+| 5.2 | `Dealership.IsWithinOperatingHours(TimeRange)` moved off `AppointmentSchedulingPolicy` onto `Dealership` itself | DONE (doc) | Rationale: once Dealership crosses a bounded-context boundary, the operating-hours rule belongs to the type that owns the concept, not a Scheduler-side policy reaching into its fields. `AppointmentSchedulingPolicy` now only does `HasNoOverlap` |
+| 5.3 | Repository interfaces moved to `Scheduler.Domain` (not `Scheduler.Application`) | DONE (doc) | New Architecture Principle #8: Repository = persistence for an aggregate this app owns → Domain. Provider = capability consumed from another bounded context → Application. Only `IAppointmentRepository` remains a Repository after 5.5 |
+| 5.4 | `ITechnicianService`/`IServiceBayService` renamed to `ITechnicianProvider`/`IServiceBayProvider`; new `IDealershipProvider` | DONE (doc) | Matches existing `IServiceTypeProvider` naming. `INotificationService` stays a Service — it's an action (send), not a capability lookup |
+| 5.5 | `Customer` redesigned from entity to Value Object owned by `Appointment` | DONE (doc) | Removes `ICustomerRepository`/`CustomerRepository`/`CustomerConfiguration`/`CustomerConflictException`/`UNIQUE(Email,Phone)` entirely — not renamed, deleted. `Appointment` embeds Name/Email/Phone directly (`OwnsOne`, same pattern as `Duration`). No shared `CustomerId` across appointments any more; a repeat customer is two independent rows with matching values, not a data-integrity concern |
+| 5.6 | `Dealerships` table dropped from the schema entirely | DONE (doc) | `Appointment` + `AppointmentSlot` become the only two tables. Migration to drop `Dealerships` (and later, `Customers`) is a code-phase item, not yet generated |
+| 5.7 | C4 L1/L2: Dealership/Technician/Service Bay reframed as **internal** services (same platform, different bounded context) inside an `Enterprise_Boundary`; Notification stays the one genuinely **external**, third-party service (e.g. SendGrid for email) | DONE (doc) | Was previously "external systems" for all four, which conflated "another bounded context we own" with "an actual third party" |
+| 5.8 | API Gateway added to C4 L2 (documented, not implemented) | DONE (doc) | Sits on the `Scheduler API` → internal-services leg specifically (Dealership/Technician/Service Bay), not between the frontend and `Scheduler API` — that edge stays a direct call, unchanged. One gateway hop replacing three separate direct integrations once those services are real; also the natural home for the correlation-id-assigning edge component already discussed in Observability §10. Ties into the existing (renamed) "No API Gateway deployed" scope note rather than inventing new content |
+| 5.9 | L3/L4 diagrams updated to match 5.1–5.6 | DONE | Also fixed a pre-existing drift in L4a: the old diagram showed `CustomerId` on `CreateAppointmentCommand` and Technician/ServiceBay deps directly on the Handler, but the actual code already had `CustomerName`/`CustomerEmail`/`CustomerPhone` and those deps live in `AppointmentAvailabilityChecker` — corrected while redrawing, not just re-skinned |
+| 5.10 | Code: `Scheduler.Domain`/`Scheduler.Application`/`Scheduler.Infrastructure` changes to match the doc (interface moves/renames, `MockDealershipProvider`, `Customer` VO via `OwnsOne`, EF migration dropping `Dealerships`) | TODO | Not started |
+| 5.11 | Update unit/integration tests for the new shapes | TODO | Mechanical rename for most (Moq setups on renamed interfaces); real rewrites for anything that asserted on `CustomerId`/shared identity or `IDealershipRepository` |
+| 5.12 | Update `Scheduler.Api.postman_collection.json` | TODO | Response bodies change shape (`customer: {...}` instead of `customerId`); no new endpoints needed (dealership lookup isn't proxied through this API per user direction) |
+| 5.13 | Update `README.md` | TODO | Seeded-dealership section, any `customerId` references, and the AI Collaboration Narrative section — the user moved `Agent.md` to `.agent/agent.md` and added `.agent/skills/ddd-cleanA-SOLID.md` (a DDD/Clean Architecture/SOLID skill reference used to ground this refactor's Repository-vs-Provider and Value-Object reasoning); the narrative should describe this change in workflow, not just the old single-`Agent.md` setup |
+
+**Checkpoint / output:** `architecture.md` diff is ~415 insertions/~305 deletions across §1–§14 (every section that referenced the old Dealership/Customer/Provider shapes). Full read-through done section by section, mermaid fence count verified balanced (20, even) after each pass. No code, test, Postman, or README changes yet — those are 5.10–5.13, deliberately sequenced after doc review per user's explicit "update L3/L4 before we refactor completely" instruction.
+
 ## Open Decisions Needing User Input
 
 None currently open.
