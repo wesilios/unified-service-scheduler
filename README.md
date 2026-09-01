@@ -125,16 +125,19 @@ automated test suite.
 | `BATTERY_REPLACEMENT` | Battery Replacement       | 30 min   |
 | `WHEEL_ALIGNMENT`     | Wheel Alignment           | 60 min   |
 
-`technicianId`/`serviceBayId` are validated against mocked external services for this assessment, so any non-empty GUID
-is accepted. See architecture.md's Domain Assumptions for why, and the plan for swapping in the real integration later.
+`technicianId`/`serviceBayId` are validated against this platform's own internal services (Dealership/Technician/
+Service Bay — see architecture.md's internal-vs-external distinction), mocked by default for this assessment, so any
+non-empty GUID is accepted. The matching `InfrastructureClients:*:Http:BaseUrl` settings (see Configuration below) wire
+up the DI shape for a real implementation instead — not yet functional, see that row's caveat.
 
 **Configuration:**
 
-| Setting                         | Location                                               | Purpose                                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConnectionStrings:SchedulerDb` | `appsettings.json`                                     | SQLite by default — see [A note on the database](#a-note-on-the-database)                                                                 |
-| `Serilog:*`                     | `serilog.json`                                         | Logging sinks, output template, level overrides — kept out of `Program.cs` deliberately                                                   |
-| `OpenTelemetry` OTLP endpoint   | `serilog.json` (`WriteTo:OpenTelemetry:Args:endpoint`) | Traces/metrics/logs export target; defaults to `http://localhost:4317` and fails quietly if nothing's listening — see architecture.md §10 |
+| Setting                                                                                        | Location                                               | Purpose                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConnectionStrings:SchedulerDb`                                                                  | `appsettings.json`                                     | SQLite by default — see [A note on the database](#a-note-on-the-database)                                                                                                                                                                                     |
+| `InfrastructureClients:{DealershipService,ServiceBayService,TechnicianService}:Http:BaseUrl`     | `appsettings.json`                                     | Empty by default, so each internal service runs on its `Mock*Provider`. Setting any one of these wires up the DI registration (`AddTransient` + `AddRefitClient`) for that service's real provider instead — a config change only, no code/DI change needed. **Not yet functional**: `DealershipProvider`/`TechnicianProvider`/`ServiceBayProvider` are wiring stubs that `throw NotImplementedException` today — only the swap-later DI shape is built, not the real HTTP call logic. See `AddInternalServiceProviders` in `Scheduler.Infrastructure/ServiceCollectionExtensions.cs` and architecture.md's Domain Assumptions |
+| `Serilog:*`                                                                                      | `serilog.json`                                         | Logging sinks, output template, level overrides — kept out of `Program.cs` deliberately                                                                                                                                                                       |
+| `OpenTelemetry` OTLP endpoint                                                                    | `serilog.json` (`WriteTo:OpenTelemetry:Args:endpoint`) | Traces/metrics/logs export target; defaults to `http://localhost:4317` and fails quietly if nothing's listening — see architecture.md §10                                                                                                                    |
 
 ### Database Migrations
 
