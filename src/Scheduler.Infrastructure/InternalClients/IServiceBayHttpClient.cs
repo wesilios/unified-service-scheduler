@@ -1,4 +1,4 @@
-namespace Scheduler.Infrastructure.ExternalClients;
+namespace Scheduler.Infrastructure.InternalClients;
 
 // Future real Service Bay-service HTTP client (Refit). Left empty and unwired for this
 // assessment — MockServiceBayProvider implements IServiceBayProvider today. See

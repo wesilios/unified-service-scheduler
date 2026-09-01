@@ -1,6 +1,6 @@
 using Scheduler.Application.Interfaces;
 
-namespace Scheduler.Infrastructure.ExternalServices;
+namespace Scheduler.Infrastructure.InternalServices;
 
 // Placeholder for this assessment — returns static mock data instead of calling the
 // real internal Service Bay service. See IServiceBayHttpClient (Refit, unwired) for the

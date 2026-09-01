@@ -1,17 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Refit;
 using Scheduler.Application.Interfaces;
 using Scheduler.Domain.Repositories;
 using Scheduler.Infrastructure.Caching;
 using Scheduler.Infrastructure.DataAccess;
 using Scheduler.Infrastructure.ExternalServices;
+using Scheduler.Infrastructure.InternalClients;
+using Scheduler.Infrastructure.InternalServices;
 
 namespace Scheduler.Infrastructure;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+    public static void AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDbContext<SchedulerDbContext>(options =>
         {
@@ -30,17 +33,56 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IAvailabilityCache, MemoryAvailabilityCache>();
 
-        // Placeholders for this assessment — see architecture.md Domain Assumptions for
-        // the IDealershipHttpClient/ITechnicianHttpClient/IServiceBayHttpClient (Refit,
-        // unwired) swap-later plan.
-        services.AddSingleton<IDealershipProvider, MockDealershipProvider>();
-        services.AddSingleton<ITechnicianProvider, MockTechnicianProvider>();
-        services.AddSingleton<IServiceBayProvider, MockServiceBayProvider>();
+        // Placeholders for this assessment — each internal service (Dealership/Technician/
+        // Service Bay) swaps from its Mock*Provider to a real Refit-backed provider the moment
+        // InfrastructureClients:<Service>:Http:BaseUrl is configured — see AddHttpServices
+        // below and architecture.md Domain Assumptions for the swap-later plan.
+        services.AddHttpServices(configuration);
         services.AddSingleton<INotificationService, MockNotificationService>();
 
         services.AddSingleton<IServiceTypeProvider>(_ =>
             new JsonServiceTypeProvider(Path.Combine(AppContext.BaseDirectory, "Data", "servicetypes.json")));
+    }
 
-        return services;
+    private static void AddHttpServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        var dealershipService = configuration.GetSection("InfrastructureClients:DealershipService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(dealershipService))
+        {
+            services.AddTransient<IDealershipProvider, DealershipProvider>();
+            services.AddRefitClient<IDealershipHttpClient>()
+                .ConfigureHttpClient(c =>
+                    c.BaseAddress = new Uri(dealershipService));
+        }
+        else
+        {
+            services.AddSingleton<IDealershipProvider, MockDealershipProvider>();
+        }
+
+        var technicianService = configuration.GetSection("InfrastructureClients:TechnicianService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(technicianService))
+        {
+            services.AddTransient<ITechnicianProvider, TechnicianProvider>();
+            services.AddRefitClient<ITechnicianHttpClient>()
+                .ConfigureHttpClient(c =>
+                    c.BaseAddress = new Uri(technicianService));
+        }
+        else
+        {
+            services.AddSingleton<ITechnicianProvider, MockTechnicianProvider>();
+        }
+
+        var serviceBayService = configuration.GetSection("InfrastructureClients:ServiceBayService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(serviceBayService))
+        {
+            services.AddTransient<IServiceBayProvider, ServiceBayProvider>();
+            services.AddRefitClient<IServiceBayHttpClient>()
+                .ConfigureHttpClient(c =>
+                    c.BaseAddress = new Uri(serviceBayService));
+        }
+        else
+        {
+            services.AddSingleton<IServiceBayProvider, MockServiceBayProvider>();
+        }
     }
 }

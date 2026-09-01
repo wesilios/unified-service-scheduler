@@ -1,4 +1,4 @@
-namespace Scheduler.Domain.Entities;
+namespace Scheduler.Domain.ValueObjects;
 
 // Value Object owned by Appointment (EF Core OwnsOne) — no identity of its own, no table.
 // Two Appointments from the same person simply carry two independent copies of the same

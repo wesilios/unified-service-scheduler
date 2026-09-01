@@ -87,7 +87,7 @@ namespace Scheduler.Infrastructure.DataAccess.Migrations
 
             modelBuilder.Entity("Scheduler.Domain.Entities.Appointment", b =>
                 {
-                    b.OwnsOne("Scheduler.Domain.Entities.Customer", "Customer", b1 =>
+                    b.OwnsOne("Scheduler.Domain.ValueObjects.Customer", "Customer", b1 =>
                         {
                             b1.Property<Guid>("AppointmentId")
                                 .HasColumnType("TEXT");

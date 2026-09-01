@@ -1,4 +1,4 @@
-using Scheduler.Infrastructure.ExternalServices;
+using Scheduler.Infrastructure.InternalServices;
 
 namespace Scheduler.UnitTests.Infrastructure;
 

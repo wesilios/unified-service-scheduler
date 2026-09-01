@@ -1,4 +1,4 @@
-namespace Scheduler.Infrastructure.ExternalClients;
+namespace Scheduler.Infrastructure.InternalClients;
 
 // Future real Dealership-service HTTP client (Refit). Left empty and unwired for this
 // assessment — MockDealershipProvider implements IDealershipProvider today. See

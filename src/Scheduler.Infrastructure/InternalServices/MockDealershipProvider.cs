@@ -1,7 +1,7 @@
 using Scheduler.Application.Interfaces;
 using Scheduler.Domain.Entities;
 
-namespace Scheduler.Infrastructure.ExternalServices;
+namespace Scheduler.Infrastructure.InternalServices;
 
 // Placeholder for this assessment — returns static mock data instead of calling the
 // real internal Dealership service. See IDealershipHttpClient (Refit, unwired) for the

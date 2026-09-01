@@ -1,4 +1,4 @@
-namespace Scheduler.Infrastructure.ExternalClients;
+namespace Scheduler.Infrastructure.InternalClients;
 
 // Future real Technician-service HTTP client (Refit). Left empty and unwired for this
 // assessment — MockTechnicianProvider implements ITechnicianProvider today. See
