@@ -512,11 +512,20 @@ and then move to the next piece.
 
 Before writing code, I created Agent.md to define how I wanted the AI agent to work with me. It later moved to
 `.agent/agent.md`, alongside a `.agent/skills/` folder for topic-specific references I didn't want cluttering the main
-brief — one directory per skill, each holding a `SKILL.md`: `ddd-cleanarchitecture-solid/SKILL.md` (Domain-Driven
-Design / Clean Architecture / SOLID guidance — I used this to ground a later refactor's Repository-vs-Provider naming
-split and the decision to make Customer a Value Object instead of an entity) and
-`multi-agent-collaboration/SKILL.md` (written after a real incident with running agents in parallel — more on that
-below). One brief plus focused skills reads better than one file growing indefinitely.
+brief — one directory per skill, each holding a `SKILL.md`:
+
+- `ddd-cleanarchitecture-solid/SKILL.md` — Domain-Driven Design / Clean Architecture / SOLID guidance, used to ground a
+  later refactor's Repository-vs-Provider naming split and the decision to make Customer a Value Object instead of an
+  entity.
+- `multi-agent-collaboration/SKILL.md` — written after a real incident with running agents in parallel (more on that
+  below).
+- `clean-code/SKILL.md` — naming and function-clarity guidelines, written after asking the agent to review the
+  codebase for misleading names; it found two real ones (a DI-registration method promising HTTP-only behavior that
+  actually fell back to an in-memory mock half the time, and config-string variables named as if they held service
+  instances) and fixed both, plus a generic `sut` in every test file renamed to what it actually holds
+  (`provider`/`handler`/`checker`).
+
+One brief plus focused skills reads better than one file growing indefinitely.
 
 I gave the agent the role of a Senior Solution Architect / Software Engineer and described the domain assumptions,
 engineering priorities, and constraints of the assessment. I also ranked the priorities so there was less room for

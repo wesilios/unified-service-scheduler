@@ -248,6 +248,40 @@ references, and rewrote the AI Collaboration Narrative for the `.agent/` restruc
 base-branch incident as a verification example. Full solution rebuilt and retested after both (80/80 passing) before
 committing either.
 
+**Follow-up pass — post-merge cleanup, IServiceTypeProvider async, clean-code skill + audit:** after merging
+`feature/bounded-context-refactor` into `feat/api-response-contract` (fast-forward, no conflicts), several smaller
+requested changes landed directly on that branch:
+- `Customer.cs`: `Entities/` → `ValueObjects/` (it's a Value Object, not an entity) — fixed the EF model snapshot's
+  now-stale type-name string so no spurious pending-model-changes warning appeared; verified live.
+- `Infrastructure/ExternalServices` split by the internal-vs-external distinction: only `MockNotificationService`
+  stayed; `MockDealershipProvider`/`MockTechnicianProvider`/`MockServiceBayProvider` and a new real
+  `DealershipProvider` (user-added, Refit-backed, `NotImplementedException` stub) moved to a new `InternalServices/`
+  folder; `ExternalClients/` → `InternalClients/` for the three `I*HttpClient` stubs.
+- Picked up the user's `AddHttpServices` example (config-driven swap: real Refit provider when
+  `InfrastructureClients:<Service>:Http:BaseUrl` is set, `Mock*Provider` fallback otherwise) and extended it to
+  Technician/ServiceBay with matching `TechnicianProvider`/`ServiceBayProvider` stubs.
+- `IServiceTypeProvider.TryGet`/`GetAll` → `TryGetAsync`/`GetAllAsync` (`Task`-returning, `CancellationToken`),
+  matching the other Providers, so a future real Service Type internal service wouldn't force an interface change.
+- New `.agent/skills/clean-code/SKILL.md` (naming/function-clarity guidelines) plus a full read-through of every
+  non-test `src/` file against it — found and fixed two real violations, both in
+  `Scheduler.Infrastructure/ServiceCollectionExtensions.cs`: `AddHttpServices` renamed to
+  `AddInternalServiceProviders` (the old name promised HTTP-only behavior but half of every branch registered an
+  in-memory mock instead), and the `dealershipService`/`technicianService`/`serviceBayService` locals renamed to
+  `*ServiceBaseUrl` (they held a config string, not a service instance).
+- Generic `sut` renamed across all 7 test files that had it, to what each actually holds:
+  `provider`/`handler`/`checker`, plus `CreateSut()` → `CreateHandler()`/`CreateChecker()` where applicable.
+- README: added the `InfrastructureClients:*:Http:BaseUrl` row to the Configuration table (existed in
+  `appsettings.json` via the user's own commit `fa09c74`, was never documented) — deliberately honest that the real
+  providers are wiring stubs (`NotImplementedException`), not a working integration yet. Also updated the AI
+  Collaboration Narrative's skills list to include `clean-code/SKILL.md` (missed in the previous pass — caught when
+  asked directly rather than proactively, a gap worth naming rather than glossing over).
+
+Every change in this pass was verified with a full `dotnet build` + `dotnet test` (80/80 passing throughout, unchanged
+except the sut-rename pass which is also 80/80), and the DI/provider changes specifically with a live `dotnet run` +
+curl round trip before committing. One file left alone throughout despite being adjacent to this work:
+`IQueueProvider.cs` was deleted by the user directly (confirmed intentional — never used) rather than by any of these
+passes.
+
 ## Open Decisions Needing User Input
 
 None currently open.
