@@ -3,15 +3,16 @@ using Scheduler.Application.Interfaces;
 using Scheduler.Application.Queries;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.ValueObjects;
 
 namespace Scheduler.UnitTests.Application;
 
 public class AppointmentAvailabilityCheckerTests
 {
-    private readonly Mock<IDealershipRepository> _dealerships = new();
-    private readonly Mock<ITechnicianService> _technicianService = new();
-    private readonly Mock<IServiceBayService> _serviceBayService = new();
+    private readonly Mock<IDealershipProvider> _dealershipProvider = new();
+    private readonly Mock<ITechnicianProvider> _technicianProvider = new();
+    private readonly Mock<IServiceBayProvider> _serviceBayProvider = new();
     private readonly Mock<IServiceTypeProvider> _serviceTypeProvider = new();
     private readonly Mock<IAppointmentRepository> _appointments = new();
 
@@ -23,15 +24,15 @@ public class AppointmentAvailabilityCheckerTests
     private static readonly Dealership Dealership = new(DealershipId, "Test", new TimeOnly(8, 0), new TimeOnly(17, 0));
 
     private AppointmentAvailabilityChecker CreateSut() => new(
-        _dealerships.Object, _technicianService.Object, _serviceBayService.Object,
+        _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
         _serviceTypeProvider.Object, _appointments.Object);
 
     private void SetupHappyPathDependencies()
     {
         _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _serviceBayService.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _dealerships.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Appointment>());
@@ -52,7 +53,7 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_TechnicianDoesNotExist_ReturnsInvalidResource()
     {
         SetupHappyPathDependencies();
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var sut = CreateSut();
 
         var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
@@ -64,7 +65,7 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_ServiceBayDoesNotExist_ReturnsInvalidResource()
     {
         SetupHappyPathDependencies();
-        _serviceBayService.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var sut = CreateSut();
 
         var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
@@ -76,7 +77,7 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_DealershipNotFound_ReturnsInvalidResource()
     {
         SetupHappyPathDependencies();
-        _dealerships.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync((Dealership?)null);
+        _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync((Dealership?)null);
         var sut = CreateSut();
 
         var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);

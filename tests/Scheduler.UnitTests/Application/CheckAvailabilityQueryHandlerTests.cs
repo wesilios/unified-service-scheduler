@@ -4,15 +4,16 @@ using Scheduler.Application.Interfaces;
 using Scheduler.Application.Queries;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.ValueObjects;
 
 namespace Scheduler.UnitTests.Application;
 
 public class CheckAvailabilityQueryHandlerTests
 {
-    private readonly Mock<IDealershipRepository> _dealerships = new();
-    private readonly Mock<ITechnicianService> _technicianService = new();
-    private readonly Mock<IServiceBayService> _serviceBayService = new();
+    private readonly Mock<IDealershipProvider> _dealershipProvider = new();
+    private readonly Mock<ITechnicianProvider> _technicianProvider = new();
+    private readonly Mock<IServiceBayProvider> _serviceBayProvider = new();
     private readonly Mock<IServiceTypeProvider> _serviceTypeProvider = new();
     private readonly Mock<IAppointmentRepository> _appointments = new();
 
@@ -26,7 +27,7 @@ public class CheckAvailabilityQueryHandlerTests
     private CheckAvailabilityQueryHandler CreateSut()
     {
         var checker = new AppointmentAvailabilityChecker(
-            _dealerships.Object, _technicianService.Object, _serviceBayService.Object,
+            _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
             _serviceTypeProvider.Object, _appointments.Object);
         return new CheckAvailabilityQueryHandler(checker);
     }
@@ -35,9 +36,9 @@ public class CheckAvailabilityQueryHandlerTests
     public async Task HandleAsync_AvailableSlot_ReturnsAvailable()
     {
         _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _serviceBayService.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _dealerships.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Appointment>());
