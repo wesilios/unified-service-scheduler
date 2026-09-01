@@ -1,7 +1,7 @@
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.ValueObjects;
 
-namespace Scheduler.Application.Interfaces;
+namespace Scheduler.Domain.Repositories;
 
 public interface IAppointmentRepository
 {

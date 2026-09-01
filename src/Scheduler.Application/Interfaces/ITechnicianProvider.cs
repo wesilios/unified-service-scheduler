@@ -1,6 +1,6 @@
 namespace Scheduler.Application.Interfaces;
 
-public interface ITechnicianService
+public interface ITechnicianProvider
 {
     Task<bool> ExistsAsync(Guid technicianId, CancellationToken cancellationToken = default);
 }

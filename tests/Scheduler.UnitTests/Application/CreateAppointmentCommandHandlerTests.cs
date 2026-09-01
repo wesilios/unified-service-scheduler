@@ -6,6 +6,7 @@ using Scheduler.Application.Results;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.ValueObjects;
 
 namespace Scheduler.UnitTests.Application;
@@ -13,9 +14,9 @@ namespace Scheduler.UnitTests.Application;
 public class CreateAppointmentCommandHandlerTests
 {
     private readonly Mock<IAppointmentRepository> _appointments = new();
-    private readonly Mock<IDealershipRepository> _dealerships = new();
-    private readonly Mock<ITechnicianService> _technicianService = new();
-    private readonly Mock<IServiceBayService> _serviceBayService = new();
+    private readonly Mock<IDealershipProvider> _dealershipProvider = new();
+    private readonly Mock<ITechnicianProvider> _technicianProvider = new();
+    private readonly Mock<IServiceBayProvider> _serviceBayProvider = new();
     private readonly Mock<IServiceTypeProvider> _serviceTypeProvider = new();
     private readonly Mock<ICustomerRepository> _customers = new();
     private readonly Mock<INotificationService> _notificationService = new();
@@ -36,9 +37,9 @@ public class CreateAppointmentCommandHandlerTests
     private void SetupHappyPathDependencies()
     {
         _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _serviceBayService.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _dealerships.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Appointment>());
@@ -47,7 +48,7 @@ public class CreateAppointmentCommandHandlerTests
     private CreateAppointmentCommandHandler CreateSut()
     {
         var checker = new AppointmentAvailabilityChecker(
-            _dealerships.Object, _technicianService.Object, _serviceBayService.Object,
+            _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
             _serviceTypeProvider.Object, _appointments.Object);
 
         return new CreateAppointmentCommandHandler(
@@ -139,7 +140,7 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_InvalidTechnician_ReturnsInvalidResource()
     {
         SetupHappyPathDependencies();
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var sut = CreateSut();
 
         var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);

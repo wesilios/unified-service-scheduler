@@ -3,12 +3,12 @@ using Scheduler.Application.Interfaces;
 namespace Scheduler.Infrastructure.ExternalServices;
 
 // Placeholder for this assessment — returns static mock data instead of calling the
-// real external Service Bay system. See IServiceBayHttpClient (Refit, unwired) for the
+// real internal Technician service. See ITechnicianHttpClient (Refit, unwired) for the
 // future real implementation this would be swapped for. Guid.Empty is treated as "not
 // found" so the invalid-resource branch (Data Flow) is exercisable; any other id is
-// treated as a valid service bay.
-public sealed class MockServiceBayService : IServiceBayService
+// treated as a valid technician.
+public sealed class MockTechnicianProvider : ITechnicianProvider
 {
-    public Task<bool> ExistsAsync(Guid serviceBayId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(serviceBayId != Guid.Empty);
+    public Task<bool> ExistsAsync(Guid technicianId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(technicianId != Guid.Empty);
 }

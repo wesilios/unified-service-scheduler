@@ -6,6 +6,7 @@ using Scheduler.Application.Results;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
+using Scheduler.Domain.Repositories;
 
 namespace Scheduler.Application.Handlers;
 

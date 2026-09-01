@@ -16,7 +16,6 @@ public class SchedulerDbContext : DbContext
 
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<AppointmentSlot> AppointmentSlots => Set<AppointmentSlot>();
-    public DbSet<Dealership> Dealerships => Set<Dealership>();
     public DbSet<Customer> Customers => Set<Customer>();
 
     // Each entity's Fluent API configuration lives in its own IEntityTypeConfiguration<T>

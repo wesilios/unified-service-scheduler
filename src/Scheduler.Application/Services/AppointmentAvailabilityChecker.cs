@@ -3,6 +3,7 @@ using Scheduler.Application.Interfaces;
 using Scheduler.Application.Observability;
 using Scheduler.Application.Queries;
 using Scheduler.Domain.Entities;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.Services;
 using Scheduler.Domain.ValueObjects;
 
@@ -15,22 +16,22 @@ namespace Scheduler.Application.Services;
 // just reports it.
 public sealed class AppointmentAvailabilityChecker
 {
-    private readonly IDealershipRepository _dealerships;
-    private readonly ITechnicianService _technicianService;
-    private readonly IServiceBayService _serviceBayService;
+    private readonly IDealershipProvider _dealershipProvider;
+    private readonly ITechnicianProvider _technicianProvider;
+    private readonly IServiceBayProvider _serviceBayProvider;
     private readonly IServiceTypeProvider _serviceTypeProvider;
     private readonly IAppointmentRepository _appointments;
 
     public AppointmentAvailabilityChecker(
-        IDealershipRepository dealerships,
-        ITechnicianService technicianService,
-        IServiceBayService serviceBayService,
+        IDealershipProvider dealershipProvider,
+        ITechnicianProvider technicianProvider,
+        IServiceBayProvider serviceBayProvider,
         IServiceTypeProvider serviceTypeProvider,
         IAppointmentRepository appointments)
     {
-        _dealerships = dealerships;
-        _technicianService = technicianService;
-        _serviceBayService = serviceBayService;
+        _dealershipProvider = dealershipProvider;
+        _technicianProvider = technicianProvider;
+        _serviceBayProvider = serviceBayProvider;
         _serviceTypeProvider = serviceTypeProvider;
         _appointments = appointments;
     }
@@ -59,12 +60,12 @@ public sealed class AppointmentAvailabilityChecker
         bool serviceBayExists;
         using (SchedulerInstrumentation.ActivitySource.StartActivity("Technician validation"))
         {
-            technicianExists = await _technicianService.ExistsAsync(technicianId, cancellationToken);
+            technicianExists = await _technicianProvider.ExistsAsync(technicianId, cancellationToken);
         }
 
         using (SchedulerInstrumentation.ActivitySource.StartActivity("ServiceBay validation"))
         {
-            serviceBayExists = await _serviceBayService.ExistsAsync(serviceBayId, cancellationToken);
+            serviceBayExists = await _serviceBayProvider.ExistsAsync(serviceBayId, cancellationToken);
         }
 
         stopwatch.Stop();
@@ -75,7 +76,7 @@ public sealed class AppointmentAvailabilityChecker
             return AvailabilityCheckOutcome.Failed(AvailabilityStatus.InvalidResource, "Technician or Service Bay not found.");
         }
 
-        var dealership = await _dealerships.GetAsync(dealershipId, cancellationToken);
+        var dealership = await _dealershipProvider.GetAsync(dealershipId, cancellationToken);
         if (dealership is null)
         {
             return AvailabilityCheckOutcome.Failed(AvailabilityStatus.InvalidResource, "Dealership not found.");
@@ -83,7 +84,7 @@ public sealed class AppointmentAvailabilityChecker
 
         var range = new TimeRange(startTime, startTime.Add(serviceType.Duration));
 
-        if (!AppointmentSchedulingPolicy.IsWithinOperatingHours(range, dealership))
+        if (!dealership.IsWithinOperatingHours(range))
         {
             return AvailabilityCheckOutcome.Failed(
                 AvailabilityStatus.OutsideOperatingHours,
