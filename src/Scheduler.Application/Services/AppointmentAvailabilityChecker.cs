@@ -14,7 +14,7 @@ namespace Scheduler.Application.Services;
 // and including the overlap read-check). AvailabilityStatus.Available means "proceed";
 // CreateAppointmentCommandHandler additionally persists on success, CheckAvailabilityQuery
 // just reports it.
-public sealed class AppointmentAvailabilityChecker
+public sealed class AppointmentAvailabilityChecker : IAppointmentAvailabilityChecker
 {
     private readonly IDealershipProvider _dealershipProvider;
     private readonly ITechnicianProvider _technicianProvider;

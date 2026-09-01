@@ -596,23 +596,27 @@ classDiagram
     }
 
     class CreateAppointmentCommandHandler {
-        -AppointmentAvailabilityChecker availabilityChecker
+        -IAppointmentAvailabilityChecker availabilityChecker
         -IAppointmentRepository appointments
         -INotificationService notificationService
         -IAvailabilityCache availabilityCache
         +HandleAsync(CreateAppointmentCommand) Task~object~
     }
     CreateAppointmentCommandHandler ..|> ICommandHandler~CreateAppointmentCommand~
-    CreateAppointmentCommandHandler --> AppointmentAvailabilityChecker
+    CreateAppointmentCommandHandler --> IAppointmentAvailabilityChecker
 
+    class IAppointmentAvailabilityChecker {
+        <<interface>>
+        +CheckAsync(dealershipId, technicianId, serviceBayId, serviceTypeCode, startTime) Task~AvailabilityCheckOutcome~
+    }
     class AppointmentAvailabilityChecker {
         -IDealershipProvider dealershipProvider
         -ITechnicianProvider technicianProvider
         -IServiceBayProvider serviceBayProvider
         -IServiceTypeProvider serviceTypeProvider
         -IAppointmentRepository appointments
-        +CheckAsync(dealershipId, technicianId, serviceBayId, serviceTypeCode, startTime) Task~AvailabilityCheckOutcome~
     }
+    AppointmentAvailabilityChecker ..|> IAppointmentAvailabilityChecker
 
     class IAppointmentRepository {
         <<interface — Scheduler.Domain>>
