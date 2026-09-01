@@ -35,50 +35,55 @@ public static class ServiceCollectionExtensions
 
         // Placeholders for this assessment — each internal service (Dealership/Technician/
         // Service Bay) swaps from its Mock*Provider to a real Refit-backed provider the moment
-        // InfrastructureClients:<Service>:Http:BaseUrl is configured — see AddHttpServices
-        // below and architecture.md Domain Assumptions for the swap-later plan.
-        services.AddHttpServices(configuration);
+        // InfrastructureClients:<Service>:Http:BaseUrl is configured — see
+        // AddInternalServiceProviders below and architecture.md Domain Assumptions for the
+        // swap-later plan.
+        services.AddInternalServiceProviders(configuration);
         services.AddSingleton<INotificationService, MockNotificationService>();
 
         services.AddSingleton<IServiceTypeProvider>(_ =>
             new JsonServiceTypeProvider(Path.Combine(AppContext.BaseDirectory, "Data", "servicetypes.json")));
     }
 
-    private static void AddHttpServices(this IServiceCollection services, IConfiguration configuration)
+    // Named for the contract (registers the Provider abstractions, real-or-mock, config-driven)
+    // rather than "AddHttpServices" — half of each branch below registers an in-memory mock with
+    // no HTTP involved at all, so a name promising HTTP unconditionally would be misleading. See
+    // .agent/skills/clean-code/SKILL.md §2.
+    private static void AddInternalServiceProviders(this IServiceCollection services, IConfiguration configuration)
     {
-        var dealershipService = configuration.GetSection("InfrastructureClients:DealershipService:Http:BaseUrl").Value;
-        if (!string.IsNullOrEmpty(dealershipService))
+        var dealershipServiceBaseUrl = configuration.GetSection("InfrastructureClients:DealershipService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(dealershipServiceBaseUrl))
         {
             services.AddTransient<IDealershipProvider, DealershipProvider>();
             services.AddRefitClient<IDealershipHttpClient>()
                 .ConfigureHttpClient(c =>
-                    c.BaseAddress = new Uri(dealershipService));
+                    c.BaseAddress = new Uri(dealershipServiceBaseUrl));
         }
         else
         {
             services.AddSingleton<IDealershipProvider, MockDealershipProvider>();
         }
 
-        var technicianService = configuration.GetSection("InfrastructureClients:TechnicianService:Http:BaseUrl").Value;
-        if (!string.IsNullOrEmpty(technicianService))
+        var technicianServiceBaseUrl = configuration.GetSection("InfrastructureClients:TechnicianService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(technicianServiceBaseUrl))
         {
             services.AddTransient<ITechnicianProvider, TechnicianProvider>();
             services.AddRefitClient<ITechnicianHttpClient>()
                 .ConfigureHttpClient(c =>
-                    c.BaseAddress = new Uri(technicianService));
+                    c.BaseAddress = new Uri(technicianServiceBaseUrl));
         }
         else
         {
             services.AddSingleton<ITechnicianProvider, MockTechnicianProvider>();
         }
 
-        var serviceBayService = configuration.GetSection("InfrastructureClients:ServiceBayService:Http:BaseUrl").Value;
-        if (!string.IsNullOrEmpty(serviceBayService))
+        var serviceBayServiceBaseUrl = configuration.GetSection("InfrastructureClients:ServiceBayService:Http:BaseUrl").Value;
+        if (!string.IsNullOrEmpty(serviceBayServiceBaseUrl))
         {
             services.AddTransient<IServiceBayProvider, ServiceBayProvider>();
             services.AddRefitClient<IServiceBayHttpClient>()
                 .ConfigureHttpClient(c =>
-                    c.BaseAddress = new Uri(serviceBayService));
+                    c.BaseAddress = new Uri(serviceBayServiceBaseUrl));
         }
         else
         {

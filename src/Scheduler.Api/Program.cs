@@ -64,8 +64,9 @@ try
     app.MapHealthChecks("/health");
     app.MapControllers();
 
-    // Applies pending EF Core migrations (schema + seeded Dealership) at startup — SQLite
-    // for this assessment, SQL Server for production; same migrations apply to both.
+    // Applies pending EF Core migrations (Appointment/AppointmentSlot schema — Dealership is
+    // no longer a table this app seeds, see MockDealershipProvider) at startup — SQLite for
+    // this assessment, SQL Server for production; same migrations apply to both.
     // Skipped under "Testing": Scheduler.IntegrationTests' SchedulerApiFactory applies the
     // migration itself, via a standalone DbContext, before the host is ever built — see
     // SchedulerApiFactory's constructor for why (WebApplicationFactory's own host-startup
