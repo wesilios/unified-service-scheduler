@@ -44,7 +44,7 @@ public class CreateAppointmentCommandHandlerTests
             .ReturnsAsync(Array.Empty<Appointment>());
     }
 
-    private CreateAppointmentCommandHandler CreateSut()
+    private CreateAppointmentCommandHandler CreateHandler()
     {
         var checker = new AppointmentAvailabilityChecker(
             _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
@@ -59,9 +59,9 @@ public class CreateAppointmentCommandHandlerTests
     {
         SetupHappyPathDependencies();
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Success, result.Status);
         Assert.NotNull(result.Appointment);
@@ -79,10 +79,10 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_RepeatCustomer_EachBookingGetsItsOwnEmbeddedCustomer()
     {
         SetupHappyPathDependencies();
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var first = (AppointmentResult)await sut.HandleAsync(ValidCommand);
-        var second = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var first = (AppointmentResult)await handler.HandleAsync(ValidCommand);
+        var second = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Success, first.Status);
         Assert.Equal(AppointmentResultStatus.Success, second.Status);
@@ -94,9 +94,9 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_UnknownServiceType_ReturnsFailureWithoutTouchingAppointmentRepo()
     {
         _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.InvalidServiceType, result.Status);
         _appointments.Verify(x => x.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -107,9 +107,9 @@ public class CreateAppointmentCommandHandlerTests
     {
         SetupHappyPathDependencies();
         _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.InvalidResource, result.Status);
     }
@@ -118,10 +118,10 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_OutsideOperatingHours_ReturnsOutsideOperatingHours()
     {
         SetupHappyPathDependencies();
-        var sut = CreateSut();
+        var handler = CreateHandler();
         var earlyCommand = ValidCommand with { StartTime = new DateTime(2026, 9, 7, 6, 0, 0) };
 
-        var result = (AppointmentResult)await sut.HandleAsync(earlyCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(earlyCommand);
 
         Assert.Equal(AppointmentResultStatus.OutsideOperatingHours, result.Status);
     }
@@ -138,9 +138,9 @@ public class CreateAppointmentCommandHandlerTests
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([existing]);
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Conflict, result.Status);
     }
@@ -153,9 +153,9 @@ public class CreateAppointmentCommandHandlerTests
             .Setup(x => x.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new AppointmentConflictException("lost the race"));
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Conflict, result.Status);
         _notificationService.Verify(

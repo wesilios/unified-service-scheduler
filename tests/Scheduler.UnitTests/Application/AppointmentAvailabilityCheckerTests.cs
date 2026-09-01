@@ -23,7 +23,7 @@ public class AppointmentAvailabilityCheckerTests
     private static readonly ServiceType OilChange = new("OIL_CHANGE", "Oil Change", TimeSpan.FromMinutes(30));
     private static readonly Dealership Dealership = new(DealershipId, "Test", new TimeOnly(8, 0), new TimeOnly(17, 0));
 
-    private AppointmentAvailabilityChecker CreateSut() => new(
+    private AppointmentAvailabilityChecker CreateChecker() => new(
         _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
         _serviceTypeProvider.Object, _appointments.Object);
 
@@ -42,9 +42,9 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_UnknownServiceType_ReturnsInvalidServiceType()
     {
         _serviceTypeProvider.Setup(x => x.TryGetAsync("UNKNOWN", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "UNKNOWN", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "UNKNOWN", StartTime);
 
         Assert.Equal(AvailabilityStatus.InvalidServiceType, result.Status);
     }
@@ -54,9 +54,9 @@ public class AppointmentAvailabilityCheckerTests
     {
         SetupHappyPathDependencies();
         _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
         Assert.Equal(AvailabilityStatus.InvalidResource, result.Status);
     }
@@ -66,9 +66,9 @@ public class AppointmentAvailabilityCheckerTests
     {
         SetupHappyPathDependencies();
         _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
         Assert.Equal(AvailabilityStatus.InvalidResource, result.Status);
     }
@@ -78,9 +78,9 @@ public class AppointmentAvailabilityCheckerTests
     {
         SetupHappyPathDependencies();
         _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync((Dealership?)null);
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
         Assert.Equal(AvailabilityStatus.InvalidResource, result.Status);
     }
@@ -89,10 +89,10 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_OutsideOperatingHours_ReturnsOutsideOperatingHours()
     {
         SetupHappyPathDependencies();
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
         var earlyMorning = new DateTime(2026, 9, 7, 6, 0, 0);
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", earlyMorning);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", earlyMorning);
 
         Assert.Equal(AvailabilityStatus.OutsideOperatingHours, result.Status);
     }
@@ -108,9 +108,9 @@ public class AppointmentAvailabilityCheckerTests
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([existing]);
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
         Assert.Equal(AvailabilityStatus.Unavailable, result.Status);
     }
@@ -119,9 +119,9 @@ public class AppointmentAvailabilityCheckerTests
     public async Task CheckAsync_AllValid_ReturnsAvailableWithServiceTypeAndRange()
     {
         SetupHappyPathDependencies();
-        var sut = CreateSut();
+        var checker = CreateChecker();
 
-        var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
+        var result = await checker.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
         Assert.Equal(AvailabilityStatus.Available, result.Status);
         Assert.Equal(OilChange, result.ServiceType);

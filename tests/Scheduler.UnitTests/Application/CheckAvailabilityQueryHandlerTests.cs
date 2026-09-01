@@ -24,7 +24,7 @@ public class CheckAvailabilityQueryHandlerTests
     private static readonly ServiceType OilChange = new("OIL_CHANGE", "Oil Change", TimeSpan.FromMinutes(30));
     private static readonly Dealership Dealership = new(DealershipId, "Test", new TimeOnly(8, 0), new TimeOnly(17, 0));
 
-    private CheckAvailabilityQueryHandler CreateSut()
+    private CheckAvailabilityQueryHandler CreateHandler()
     {
         var checker = new AppointmentAvailabilityChecker(
             _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
@@ -43,10 +43,10 @@ public class CheckAvailabilityQueryHandlerTests
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Appointment>());
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
         var query = new CheckAvailabilityQuery(DealershipId, TechnicianId, ServiceBayId, "OIL_CHANGE", StartTime);
 
-        var result = await sut.HandleAsync(query);
+        var result = await handler.HandleAsync(query);
 
         Assert.Equal(AvailabilityStatus.Available, result.Status);
         Assert.Null(result.Reason);
@@ -57,10 +57,10 @@ public class CheckAvailabilityQueryHandlerTests
     {
         _serviceTypeProvider.Setup(x => x.TryGetAsync("UNKNOWN", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
         var query = new CheckAvailabilityQuery(DealershipId, TechnicianId, ServiceBayId, "UNKNOWN", StartTime);
 
-        var result = await sut.HandleAsync(query);
+        var result = await handler.HandleAsync(query);
 
         Assert.Equal(AvailabilityStatus.InvalidServiceType, result.Status);
         Assert.NotNull(result.Reason);

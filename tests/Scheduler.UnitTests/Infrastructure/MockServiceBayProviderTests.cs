@@ -7,14 +7,14 @@ public class MockServiceBayProviderTests
     [Fact]
     public async Task ExistsAsync_EmptyGuid_ReturnsFalse()
     {
-        var sut = new MockServiceBayProvider();
-        Assert.False(await sut.ExistsAsync(Guid.Empty));
+        var provider = new MockServiceBayProvider();
+        Assert.False(await provider.ExistsAsync(Guid.Empty));
     }
 
     [Fact]
     public async Task ExistsAsync_NonEmptyGuid_ReturnsTrue()
     {
-        var sut = new MockServiceBayProvider();
-        Assert.True(await sut.ExistsAsync(Guid.NewGuid()));
+        var provider = new MockServiceBayProvider();
+        Assert.True(await provider.ExistsAsync(Guid.NewGuid()));
     }
 }

@@ -9,9 +9,9 @@ public class MockDealershipProviderTests
     [Fact]
     public async Task GetAsync_KnownId_ReturnsDealership()
     {
-        var sut = new MockDealershipProvider();
+        var provider = new MockDealershipProvider();
 
-        var dealership = await sut.GetAsync(KnownDealershipId);
+        var dealership = await provider.GetAsync(KnownDealershipId);
 
         Assert.NotNull(dealership);
         Assert.Equal(KnownDealershipId, dealership!.Id);
@@ -23,9 +23,9 @@ public class MockDealershipProviderTests
     [Fact]
     public async Task GetAsync_UnknownId_ReturnsNull()
     {
-        var sut = new MockDealershipProvider();
+        var provider = new MockDealershipProvider();
 
-        var dealership = await sut.GetAsync(Guid.NewGuid());
+        var dealership = await provider.GetAsync(Guid.NewGuid());
 
         Assert.Null(dealership);
     }
