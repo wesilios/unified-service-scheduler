@@ -36,11 +36,20 @@ public sealed class AppointmentsController : ControllerBase
 
         var result = (AppointmentResult)await _dispatcher.SendAsync(command);
 
+        // ErrorCode goes in Extensions, not Title — ApiResponseWrapperFilter reads it from
+        // there to populate the ApiResponse envelope's Errors[].ErrorCode. Title/Detail stay
+        // human text; Extensions carries the machine-readable part.
         return result.Status switch
         {
             AppointmentResultStatus.Success => Created($"/appointments/{result.Appointment!.Id}", result.Appointment),
-            AppointmentResultStatus.Conflict => Conflict(new { error = result.Error }),
-            _ => BadRequest(new { error = result.Error })
+            AppointmentResultStatus.Conflict => Problem(
+                detail: result.Error,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["errorCode"] = result.Status.ToString() }),
+            _ => Problem(
+                detail: result.Error,
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["errorCode"] = result.Status.ToString() })
         };
     }
 

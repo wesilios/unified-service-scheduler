@@ -4,7 +4,7 @@ namespace Scheduler.Application.Interfaces;
 
 public interface IServiceTypeProvider
 {
-    ServiceType? TryGet(string code);
+    Task<ServiceType?> TryGetAsync(string code, CancellationToken cancellationToken = default);
 
-    IReadOnlyDictionary<string, ServiceType> GetAll();
+    Task<IReadOnlyDictionary<string, ServiceType>> GetAllAsync(CancellationToken cancellationToken = default);
 }

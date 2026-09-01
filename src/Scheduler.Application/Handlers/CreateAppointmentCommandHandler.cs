@@ -6,6 +6,7 @@ using Scheduler.Application.Results;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
+using Scheduler.Domain.Repositories;
 
 namespace Scheduler.Application.Handlers;
 
@@ -13,20 +14,17 @@ public sealed class CreateAppointmentCommandHandler : ICommandHandler<CreateAppo
 {
     private readonly AppointmentAvailabilityChecker _availabilityChecker;
     private readonly IAppointmentRepository _appointments;
-    private readonly ICustomerRepository _customers;
     private readonly INotificationService _notificationService;
     private readonly IAvailabilityCache _availabilityCache;
 
     public CreateAppointmentCommandHandler(
         AppointmentAvailabilityChecker availabilityChecker,
         IAppointmentRepository appointments,
-        ICustomerRepository customers,
         INotificationService notificationService,
         IAvailabilityCache availabilityCache)
     {
         _availabilityChecker = availabilityChecker;
         _appointments = appointments;
-        _customers = customers;
         _notificationService = notificationService;
         _availabilityCache = availabilityCache;
     }
@@ -49,10 +47,10 @@ public sealed class CreateAppointmentCommandHandler : ICommandHandler<CreateAppo
             return AppointmentResult.Failed(failureStatus, outcome.Reason!);
         }
 
-        var customer = await ResolveCustomerAsync(command.CustomerName, command.CustomerEmail, command.CustomerPhone);
-
         var appointment = Appointment.Create(
-            customer.Id,
+            command.CustomerName,
+            command.CustomerEmail,
+            command.CustomerPhone,
             command.DealershipId,
             command.Vehicle,
             command.ServiceTypeCode,
@@ -86,32 +84,6 @@ public sealed class CreateAppointmentCommandHandler : ICommandHandler<CreateAppo
 
         RecordOutcome(AppointmentResultStatus.Success);
         return AppointmentResult.Success(appointment);
-    }
-
-    private async Task<Customer> ResolveCustomerAsync(string name, string email, string phone)
-    {
-        using var activity = SchedulerInstrumentation.ActivitySource.StartActivity("Resolve customer");
-
-        var existing = await _customers.FindByEmailAndPhoneAsync(email, phone);
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var customer = new Customer(Guid.NewGuid(), name, email, phone);
-
-        try
-        {
-            await _customers.AddAsync(customer);
-            return customer;
-        }
-        catch (CustomerConflictException)
-        {
-            // Two concurrent guest-checkout requests from the same (new) customer — the
-            // Email+Phone unique constraint caught it; the record now provably exists.
-            return await _customers.FindByEmailAndPhoneAsync(email, phone)
-                ?? throw new InvalidOperationException("Customer creation conflict could not be resolved.");
-        }
     }
 
     private static AppointmentResultStatus MapToResultStatus(AvailabilityStatus status) => status switch

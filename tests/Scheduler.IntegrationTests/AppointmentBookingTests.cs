@@ -46,10 +46,13 @@ public class AppointmentBookingTests : IDisposable
             "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 10, 0, 0)));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var appointment = await response.Content.ReadFromJsonAsync<AppointmentResponse>(JsonOptions);
-        Assert.NotNull(appointment);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
+        Assert.NotNull(envelope?.Data);
+        Assert.Equal(201, envelope!.StatusCode);
+        Assert.Equal("Success", envelope.Message);
+        Assert.Empty(envelope.Errors);
         // 30-min OIL_CHANGE -> ceil(30/15)=2 slots * 2 resources = 4
-        Assert.Equal(4, appointment!.Slots.Count);
+        Assert.Equal(4, envelope.Data!.Slots.Count);
     }
 
     [Fact]
@@ -73,6 +76,15 @@ public class AppointmentBookingTests : IDisposable
             "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 7, 0, 0)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // A single business-rule failure: Data is null, one entry in Errors carrying the
+        // machine-readable AppointmentResultStatus name as ErrorCode.
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<object>>(JsonOptions);
+        Assert.Null(envelope!.Data);
+        Assert.Equal(400, envelope.StatusCode);
+        var error = Assert.Single(envelope.Errors);
+        Assert.Equal("OutsideOperatingHours", error.ErrorCode);
+        Assert.Equal("Requested time is outside dealership operating hours.", error.ErrorMessage);
     }
 
     [Fact]
@@ -105,23 +117,62 @@ public class AppointmentBookingTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAppointment_SameCustomerTwice_ReusesCustomerId()
+    public async Task CreateAppointment_MultipleValidationFailures_ReturnsOneErrorPerField()
     {
+        // Empty vehicle AND an invalid email in the same request — FluentValidation doesn't
+        // cascade-stop across independent RuleFor chains, so both fail together. This is the
+        // "complex situation where the request encounters multiple errors at the same time"
+        // the ApiResponse envelope's Errors array exists for.
+        var request = new
+        {
+            customerName = "Test Customer",
+            customerEmail = "not-an-email",
+            customerPhone = "+639170000000",
+            vehicle = "",
+            serviceTypeCode = "OIL_CHANGE",
+            dealershipId = DealershipId,
+            technicianId = Guid.NewGuid(),
+            serviceBayId = Guid.NewGuid(),
+            startTime = new DateTime(2026, 9, 7, 10, 0, 0)
+        };
+
+        var response = await _client.PostAsJsonAsync("/appointments", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<object>>(JsonOptions);
+        Assert.Null(envelope!.Data);
+        Assert.True(envelope.Errors.Count >= 2, "Expected at least one error per invalid field.");
+        Assert.Contains(envelope.Errors, e => e.ErrorCode == "Vehicle");
+        Assert.Contains(envelope.Errors, e => e.ErrorCode == "CustomerEmail");
+    }
+
+    [Fact]
+    public async Task CreateAppointment_SameCustomerTwice_BothSucceedWithIndependentEmbeddedCustomer()
+    {
+        // Customer is a Value Object owned by Appointment, not a shared entity — two bookings
+        // from the same person are two independent rows carrying matching Name/Email/Phone
+        // values, not one shared identity. See Domain Assumptions > Customer.
         var first = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 9, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
-        var firstAppointment = await first.Content.ReadFromJsonAsync<AppointmentResponse>(JsonOptions);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var firstEnvelope = await first.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
 
         var second = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 13, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
-        var secondAppointment = await second.Content.ReadFromJsonAsync<AppointmentResponse>(JsonOptions);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        var secondEnvelope = await second.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
 
-        Assert.Equal(firstAppointment!.CustomerId, secondAppointment!.CustomerId);
+        Assert.NotEqual(firstEnvelope!.Data!.Id, secondEnvelope!.Data!.Id);
+        Assert.Equal(firstEnvelope.Data!.Customer.Email, secondEnvelope.Data!.Customer.Email);
+        Assert.Equal(firstEnvelope.Data!.Customer.Phone, secondEnvelope.Data!.Customer.Phone);
+        Assert.Equal("Juan Dela Cruz", firstEnvelope.Data!.Customer.Name);
+        Assert.Equal("Juan Dela Cruz", secondEnvelope.Data!.Customer.Name);
     }
 
     [Fact]
@@ -164,7 +215,7 @@ public class AppointmentBookingTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.False(json.GetProperty("available").GetBoolean());
+        Assert.False(json.GetProperty("data").GetProperty("available").GetBoolean());
     }
 
     [Fact]
@@ -176,7 +227,7 @@ public class AppointmentBookingTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.True(json.GetProperty("available").GetBoolean());
+        Assert.True(json.GetProperty("data").GetProperty("available").GetBoolean());
     }
 
     [Fact]
@@ -225,6 +276,17 @@ public class AppointmentBookingTests : IDisposable
     }
 }
 
-// Test-owned DTO matching the API's wire format — deliberately not the domain Appointment
-// entity, which has private setters and can't be deserialized by System.Text.Json.
-internal sealed record AppointmentResponse(Guid Id, Guid CustomerId, List<JsonElement> Slots);
+// Test-owned DTOs matching the API's wire format. ApiEnvelope<T> mirrors
+// Scheduler.Api.Contracts.ApiResponse (every response is wrapped in this — see
+// ApiResponseWrapperFilter) but typed, so tests can deserialize Data directly instead of
+// re-parsing JsonElement each time. AppointmentResponse is deliberately not the domain
+// Appointment entity, which has private setters and can't be deserialized by System.Text.Json.
+// Customer is embedded as its own value (Value Object, not a CustomerId reference) — see
+// Domain Assumptions > Customer.
+internal sealed record ApiEnvelope<T>(T? Data, int StatusCode, string Message, List<ApiErrorResponse> Errors);
+
+internal sealed record ApiErrorResponse(string ErrorCode, string ErrorMessage);
+
+internal sealed record AppointmentResponse(Guid Id, CustomerResponse Customer, List<JsonElement> Slots);
+
+internal sealed record CustomerResponse(string Name, string Email, string Phone);

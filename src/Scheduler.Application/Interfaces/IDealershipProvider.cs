@@ -2,7 +2,7 @@ using Scheduler.Domain.Entities;
 
 namespace Scheduler.Application.Interfaces;
 
-public interface IDealershipRepository
+public interface IDealershipProvider
 {
     Task<Dealership?> GetAsync(Guid dealershipId, CancellationToken cancellationToken = default);
 }

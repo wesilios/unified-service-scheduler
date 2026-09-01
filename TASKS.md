@@ -1,7 +1,8 @@
 # Unified Service Scheduler — Task Tracker
 
 Tracks progress across the 4 top-level tasks defined in `Agent.md`. Update status
-and add checkpoint notes as work completes so the session can resume cleanly.
+and add checkpoint notes as work completes so work can resume cleanly across sessions — this
+file is the shared state between them, read at the start of each new one.
 
 Status legend: `TODO` / `IN PROGRESS` / `BLOCKED` / `DONE`
 
@@ -9,7 +10,7 @@ Status legend: `TODO` / `IN PROGRESS` / `BLOCKED` / `DONE`
 
 ## Task 1 — System Design Document (`architecture.md`)
 
-Status: **DONE** — all 17 sub-items complete
+Status: **DONE** — all 17 sub-items complete; 1 follow-up doc-simplification item open (see 1.18)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -30,6 +31,7 @@ Status: **DONE** — all 17 sub-items complete
 | 1.15 | Future evolution — scalability strategy | DONE | §10. API horizontal scale-out (blocked on Redis per §5), DB read replicas (stale-read safety argument mirrors §5's cache-staleness argument), `DealershipId` partitioning, service-extraction path via existing `IDispatcher` boundary |
 | 1.16 | Future evolution — production capacity triggers | DONE | §10 table: metric → threshold → action, referencing §7's metrics directly (409 rate, API CPU/mem, availability-check p95, external call latency, lock-wait time, per-dealership volume) |
 | 1.17 | Future evolution — reliability | DONE | §10. Transactional atomicity (already in place), notification as best-effort/outbox pattern, Polly circuit breaker for future real HTTP clients, fail-closed on external validation failure, idempotency-under-retry analysis (accidental via AppointmentSlot, optional Idempotency-Key header as refinement) |
+| 1.18 | Reduce C4 Level 4 (Code) diagram duplication | TODO | L4a/L4b (class diagrams) mostly restate what L3b's Domain Model component diagram, §6 Data Model's ER diagram, and Domain Clarifications' prose already say. Recommendation: drop L4 entirely, or fold its one genuinely new fact (`IServiceTypeProvider`'s `Dictionary` lookup being O(1), not a linear scan) into §6 Data Model as a one-line note; merge L4b's `Appointment`/`TimeRange`/`ServiceType`/`Dealership` class diagram into the Data Model section rather than showing the same entities twice (once as a class diagram, once as an ER diagram). Raised during a doc-simplification review alongside two other cuts — folding "Key Trade-offs" into Architecture Principles, and condensing Security's Abuse Mitigation subsection into a table — both of which are already applied; this is the remaining piece, deferred for user review before cutting content |
 
 **Checkpoint / output:** —
 
@@ -182,7 +184,103 @@ Updated architecture.md's two remaining `Scheduler.Api.http` references (§6 Sec
 
 Also rewrote the AI Collaboration Narrative section for a plainer, more conversational voice (shorter sentences, less nested clause structure) at the user's request, keeping every concrete example and fact intact — this was a tone edit, not a content change. Added a Mermaid flowchart summarizing the write-brief → draft → review → verify → record loop described in prose throughout the section, since GitHub renders Mermaid natively in README files and a diagram makes the repeating loop easier to see than five paragraphs describing it.
 
+**Follow-up pass — standard `ApiResponse` envelope for every API response:** at the user's request, every response from the Customer Booking API (not `/health` — a standard health-check convention endpoint, deliberately left alone) is now wrapped in one contract: `{ data, statusCode, message, errors[] }`, `errors` being `{ errorCode, errorMessage }` pairs so a single request that fails on multiple fields at once (FluentValidation doesn't cascade-stop across independent `RuleFor` chains) reports every failure in one response instead of one at a time. New types: `Scheduler.Api/Contracts/ApiResponse.cs` (`ApiResponse` + `ApiError` records) and `ApiResponseFactory.cs` (`Success`/`Failure` — the one place that assembles the envelope).
+
+The DRY requirement was explicit and specific: the wrapping logic must live in exactly one place, not be copy-pasted per controller action. Implemented as two ASP.NET Core integration points, both calling the same factory rather than duplicating its logic: `Filters/ApiResponseWrapperFilter.cs`, a globally-registered `IAsyncResultFilter` (`AddControllers(options => options.Filters.Add<ApiResponseWrapperFilter>())`) that rewrites every controller `ObjectResult` — success payloads, `ProblemDetails` from `Problem(...)`, `ValidationProblemDetails` from FluentValidation *and* from ASP.NET Core's own automatic model-binding-failure 400 (verified this path too, by sending deliberately malformed JSON — it goes through `[ApiController]`'s built-in validation response, which the filter still catches generically, without any code written specifically for that case) — into the envelope; and `Middleware/ApiExceptionHandler.cs`, an `IExceptionHandler` (`AddExceptionHandler<ApiExceptionHandler>()`) for the one path the filter structurally cannot reach — an unhandled exception short-circuits past the MVC result pipeline entirely, straight into exception-handling middleware, before any result filter runs. `AppointmentsController` changed only to move its error responses from ad-hoc anonymous objects (`Conflict(new { error = ... })`) to `Problem(detail:, statusCode:, extensions: { ["errorCode"] = result.Status.ToString() })` — the framework-standard way to carry a machine-readable code alongside a human message, which `ApiResponseWrapperFilter` then reads generically.
+
+Verified against a live instance, not just unit-level: manually inspected the real JSON for a success (201, `Appointment` under `data`), a business conflict (409, `errors: [{errorCode: "Conflict", ...}]`), a single business failure (400, `OutsideOperatingHours`), a multi-field validation failure (400, two entries in `errors`, one per invalid field), an availability check, and the malformed-JSON automatic-400 path — all six matched the contract exactly. Did not get to organically trigger a genuine unhandled 500 without modifying source to force one (decided against that — too invasive for a quick check); that path rests on `IExceptionHandler` being a standard, compiler-verified ASP.NET Core 8+ interface implementation rather than live-fire evidence, which is a narrower verification claim than everything else in this pass and is called out as such rather than glossed over.
+
+Updated everything the response-shape change touched, not just the new code: `AppointmentBookingTests.cs` — fixed the tests that read response bodies (`ReadFromJsonAsync<AppointmentResponse>` → a new `ApiEnvelope<T>` test DTO wrapping it), including one, `CreateAppointment_SameCustomerTwice_ReusesCustomerId`, that had gone *silently* wrong rather than failing: with the old flat-body assumption still in the test but the new nested shape from the API, `CustomerId` deserialized to `Guid.Empty` on both sides and the equality assertion passed anyway by comparing two empty GUIDs — caught by inspection, not by a failing test, and fixed with an explicit `Assert.NotEqual(Guid.Empty, ...)` guard added so that regression class can't recur silently. Added one new test, `CreateAppointment_MultipleValidationFailures_ReturnsOneErrorPerField`, specifically for the multi-error scenario the envelope's `errors` array exists to serve — a request invalid on two fields at once, asserting both show up. Regenerated the Postman collection's `pm.test` assertions for the new envelope (`data`/`statusCode`/`errors[].errorCode` instead of flat-body checks) and re-replayed all 9 requests against a live instance to confirm every assertion actually passes, the same verification discipline as every other tooling pass in this log. `scripts/concurrency-demo.js` needed no changes — it only ever checked HTTP status codes, never response bodies.
+
+Documentation: added `## 14. API Response Contract` to architecture.md (envelope examples, the DRY rationale, which files implement it) and a new "API Response Contract" section to Agent.md per the user's explicit request ("adding this skill into Agent.md") — the standing rule for this repo going forward, not just a description of what exists today. Added a "Response contract" callout to README's Endpoints table and updated the Integration Tests table for the new test and the 77→78 total. While cross-referencing architecture.md section numbers for these README edits, found and fixed several existing citations that had drifted from the document's actual numbering (e.g. README said "architecture.md §9 (Testing Strategy)" — actually §12; "§6 (Security)" — actually §9) — caught by systematically diffing every `§N` reference in README against a fresh, precise grep of architecture.md's real heading numbers rather than trusting the citations as written, after an initial re-check of my own that used a stale read and nearly re-introduced the same class of error while "fixing" it.
+
 ---
+
+---
+
+## Task 5 — Bounded-context refactor: Dealership as an internal service, Customer as a Value Object
+
+Status: **DONE** — design, code/tests, Postman, and README all landed on `feature/bounded-context-refactor`; not yet merged to `master`/pushed
+
+Context: originally reasoned through as a "multi-tenant SaaS" framing (Dealership as tenant, a Provider Portal for
+dealership staff), then simplified per user direction — keep the *outcome* (Dealership/Technician/Service Bay are
+this platform's own internal services, not local Scheduler data) without the multi-tenancy vocabulary or complexity.
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | Domain Assumptions: Dealership rewritten as internal-service-owned, not local data | DONE | `IDealershipProvider`/`MockDealershipProvider` pattern, same shape as Technician/ServiceBay |
+| 5.2 | `Dealership.IsWithinOperatingHours(TimeRange)` moved off `AppointmentSchedulingPolicy` onto `Dealership` itself | DONE (doc) | Rationale: once Dealership crosses a bounded-context boundary, the operating-hours rule belongs to the type that owns the concept, not a Scheduler-side policy reaching into its fields. `AppointmentSchedulingPolicy` now only does `HasNoOverlap` |
+| 5.3 | Repository interfaces moved to `Scheduler.Domain` (not `Scheduler.Application`) | DONE (doc) | New Architecture Principle #8: Repository = persistence for an aggregate this app owns → Domain. Provider = capability consumed from another bounded context → Application. Only `IAppointmentRepository` remains a Repository after 5.5 |
+| 5.4 | `ITechnicianService`/`IServiceBayService` renamed to `ITechnicianProvider`/`IServiceBayProvider`; new `IDealershipProvider` | DONE (doc) | Matches existing `IServiceTypeProvider` naming. `INotificationService` stays a Service — it's an action (send), not a capability lookup |
+| 5.5 | `Customer` redesigned from entity to Value Object owned by `Appointment` | DONE (doc) | Removes `ICustomerRepository`/`CustomerRepository`/`CustomerConfiguration`/`CustomerConflictException`/`UNIQUE(Email,Phone)` entirely — not renamed, deleted. `Appointment` embeds Name/Email/Phone directly (`OwnsOne`, same pattern as `Duration`). No shared `CustomerId` across appointments any more; a repeat customer is two independent rows with matching values, not a data-integrity concern |
+| 5.6 | `Dealerships` table dropped from the schema entirely | DONE (doc) | `Appointment` + `AppointmentSlot` become the only two tables. Migration to drop `Dealerships` (and later, `Customers`) is a code-phase item, not yet generated |
+| 5.7 | C4 L1/L2: Dealership/Technician/Service Bay reframed as **internal** services (same platform, different bounded context) inside an `Enterprise_Boundary`; Notification stays the one genuinely **external**, third-party service (e.g. SendGrid for email) | DONE (doc) | Was previously "external systems" for all four, which conflated "another bounded context we own" with "an actual third party" |
+| 5.8 | API Gateway added to C4 L2 (documented, not implemented) | DONE (doc) | Sits on the `Scheduler API` → internal-services leg specifically (Dealership/Technician/Service Bay), not between the frontend and `Scheduler API` — that edge stays a direct call, unchanged. One gateway hop replacing three separate direct integrations once those services are real; also the natural home for the correlation-id-assigning edge component already discussed in Observability §10. Ties into the existing (renamed) "No API Gateway deployed" scope note rather than inventing new content |
+| 5.9 | L3/L4 diagrams updated to match 5.1–5.6 | DONE | Also fixed a pre-existing drift in L4a: the old diagram showed `CustomerId` on `CreateAppointmentCommand` and Technician/ServiceBay deps directly on the Handler, but the actual code already had `CustomerName`/`CustomerEmail`/`CustomerPhone` and those deps live in `AppointmentAvailabilityChecker` — corrected while redrawing, not just re-skinned |
+| 5.10 | Code: `Scheduler.Domain`/`Scheduler.Application`/`Scheduler.Infrastructure` changes to match the doc (interface moves/renames, `MockDealershipProvider`, `Customer` VO via `OwnsOne`, EF migration dropping `Dealerships`) | DONE | Built via two parallel subagents, each in its own git worktree (Dealership/Provider workstream + Customer VO workstream), merged back together — see Checkpoint below for how |
+| 5.11 | Update unit/integration tests for the new shapes | DONE | Done by the same two agents as part of 5.10, plus my own fix-up of the repeat-customer integration test during merge reconciliation (see Checkpoint) |
+| 5.12 | Update `Scheduler.Api.postman_collection.json` | DONE | Done directly (not via a worktree agent — see below). Only one `customerId` reference existed, in a request description (no `pm.test` scripts checked it programmatically); updated the description and added a real assertion checking `data.customer.name/email/phone` on the repeat-customer request. Verified against a live `dotnet run` instance via curl before committing — response shape matches exactly (`data.customer: {name, email, phone}`) |
+| 5.13 | Update `README.md` | DONE | Done directly (not via a worktree agent — see below). Seeded-dealership section rewritten (`MockDealershipProvider`, not a migration seed); unit/integration test tables regenerated from `dotnet test --list-tests` (66/14, was 64/13); stale `CreateAppointment_SameCustomerTwice_ReusesCustomerId` row fixed; `Agent.md` → `.agent/agent.md` references fixed; Database Migrations section notes the dropped tables; AI Collaboration Narrative rewritten for the `.agent/agent.md` + `.agent/skills/` structure and a new concrete example (the base-branch incident below) |
+
+**Checkpoint / output — design:** `architecture.md` diff is ~415 insertions/~305 deletions across §1–§14 (every section that referenced the old Dealership/Customer/Provider shapes). Full read-through done section by section, mermaid fence count verified balanced (20, even) after each pass.
+
+**Checkpoint / output — code (5.10/5.11), and a real mistake found mid-way:** implemented via two `Agent(subagent_type: "fork", isolation: "worktree")` calls launched in parallel — each inherits this session's full design context but works in its own isolated git worktree, so the two workstreams (Dealership/Provider vs. Customer VO) could proceed simultaneously without touching each other's files. Both were explicitly told not to run `dotnet ef migrations add` (two independent migrations from the same stale model snapshot would conflict on `SchedulerDbContextModelSnapshot.cs`) and not to edit TASKS.md.
+
+**Mistake caught before merging**: both worktrees turned out to be based on `master`, not the actual working branch `feat/api-response-contract` — missing 6 commits including the entire `ApiResponse` envelope feature (`data`/`statusCode`/`message`/`errors` wrapping). The Dealership/Provider agent's work was unaffected (doesn't touch the response layer). The Customer VO agent noticed the envelope was missing and adapted its integration-test assertions around a bare (non-enveloped) response — which would have been wrong once merged against the real branch. Caught by diffing branch ancestry (`git merge-base --is-ancestor`, `git log master..feat/api-response-contract`) before merging anything, not discovered later via a failing test.
+
+**Reconciliation**: created `feature/bounded-context-refactor` off the real `feat/api-response-contract`, merged the Dealership/Provider branch cleanly (one trivial auto-merge conflict in `ci.yml`), then merged the Customer VO branch — 3 real conflicts, all in files both workstreams were told they'd share (`SchedulerDbContext.cs`, `ServiceCollectionExtensions.cs` — each a two-line "which stale registration/DbSet line to delete" resolution; `AppointmentBookingTests.cs` — combined the real branch's `ApiEnvelope<T>`-aware test scaffolding with the agent's new Value-Object-aware assertions and renamed test). Generated one migration afterward (`DropDealershipAndEmbedCustomer`): drops `Dealerships`/`Customers` tables, drops `Appointments.CustomerId`, adds `CustomerName`/`CustomerEmail`/`CustomerPhone` columns. Full solution build clean; 66 unit tests + 14 integration tests passing. Worktrees and their branches deleted after merging.
+
+**Lesson for next time**: verify `isolation: "worktree"` actually branches off the intended current branch before trusting parallel-agent output — don't assume it matches whatever's checked out in the main worktree.
+
+**Checkpoint / output — 5.12/5.13, and the same base-branch issue recurring 2/2 times more**: wrote up the lesson above
+as `.agent/skills/multi-agent-collaboration/SKILL.md` (203 lines; later restructured into `<skill-name>/SKILL.md`
+directories alongside `ddd-cleanA-SOLID.md` → `ddd-cleanarchitecture-solid/SKILL.md`), then dispatched two more worktree agents for 5.12
+(Postman) and 5.13 (README), each explicitly instructed to verify its own base per the new skill before doing
+anything. Both correctly detected the same stale-`master` base and stopped immediately with no changes — 4/4 spawned
+worktree agents this session landed on `master` rather than the working branch. That's a systematic behavior of
+`isolation: "worktree"` in this environment, not a one-off. Did 5.12 and 5.13 directly instead (no subagent): fixed
+the one `customerId` reference in the Postman collection (a request description; no `pm.test` script checked it
+programmatically) and added a real assertion on the embedded `data.customer` shape, verified against a live
+`dotnet run` instance via curl before committing. Then updated README: seeded-dealership wording, regenerated the
+unit/integration test-count tables from `dotnet test --list-tests` (don't eyeball counts — this project has been
+burned by that before, see Task 4's history), fixed the stale repeat-customer test name/description, `Agent.md` path
+references, and rewrote the AI Collaboration Narrative for the `.agent/` restructure plus a concrete write-up of the
+base-branch incident as a verification example. Full solution rebuilt and retested after both (80/80 passing) before
+committing either.
+
+**Follow-up pass — post-merge cleanup, IServiceTypeProvider async, clean-code skill + audit:** after merging
+`feature/bounded-context-refactor` into `feat/api-response-contract` (fast-forward, no conflicts), several smaller
+requested changes landed directly on that branch:
+- `Customer.cs`: `Entities/` → `ValueObjects/` (it's a Value Object, not an entity) — fixed the EF model snapshot's
+  now-stale type-name string so no spurious pending-model-changes warning appeared; verified live.
+- `Infrastructure/ExternalServices` split by the internal-vs-external distinction: only `MockNotificationService`
+  stayed; `MockDealershipProvider`/`MockTechnicianProvider`/`MockServiceBayProvider` and a new real
+  `DealershipProvider` (user-added, Refit-backed, `NotImplementedException` stub) moved to a new `InternalServices/`
+  folder; `ExternalClients/` → `InternalClients/` for the three `I*HttpClient` stubs.
+- Picked up the user's `AddHttpServices` example (config-driven swap: real Refit provider when
+  `InfrastructureClients:<Service>:Http:BaseUrl` is set, `Mock*Provider` fallback otherwise) and extended it to
+  Technician/ServiceBay with matching `TechnicianProvider`/`ServiceBayProvider` stubs.
+- `IServiceTypeProvider.TryGet`/`GetAll` → `TryGetAsync`/`GetAllAsync` (`Task`-returning, `CancellationToken`),
+  matching the other Providers, so a future real Service Type internal service wouldn't force an interface change.
+- New `.agent/skills/clean-code/SKILL.md` (naming/function-clarity guidelines) plus a full read-through of every
+  non-test `src/` file against it — found and fixed two real violations, both in
+  `Scheduler.Infrastructure/ServiceCollectionExtensions.cs`: `AddHttpServices` renamed to
+  `AddInternalServiceProviders` (the old name promised HTTP-only behavior but half of every branch registered an
+  in-memory mock instead), and the `dealershipService`/`technicianService`/`serviceBayService` locals renamed to
+  `*ServiceBaseUrl` (they held a config string, not a service instance).
+- Generic `sut` renamed across all 7 test files that had it, to what each actually holds:
+  `provider`/`handler`/`checker`, plus `CreateSut()` → `CreateHandler()`/`CreateChecker()` where applicable.
+- README: added the `InfrastructureClients:*:Http:BaseUrl` row to the Configuration table (existed in
+  `appsettings.json` via the user's own commit `fa09c74`, was never documented) — deliberately honest that the real
+  providers are wiring stubs (`NotImplementedException`), not a working integration yet. Also updated the AI
+  Collaboration Narrative's skills list to include `clean-code/SKILL.md` (missed in the previous pass — caught when
+  asked directly rather than proactively, a gap worth naming rather than glossing over).
+
+Every change in this pass was verified with a full `dotnet build` + `dotnet test` (80/80 passing throughout, unchanged
+except the sut-rename pass which is also 80/80), and the DI/provider changes specifically with a live `dotnet run` +
+curl round trip before committing. One file left alone throughout despite being adjacent to this work:
+`IQueueProvider.cs` was deleted by the user directly (confirmed intentional — never used) rather than by any of these
+passes.
 
 ## Open Decisions Needing User Input
 

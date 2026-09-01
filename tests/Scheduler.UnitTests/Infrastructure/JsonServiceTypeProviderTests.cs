@@ -18,11 +18,11 @@ public class JsonServiceTypeProviderTests : IDisposable
     }
 
     [Fact]
-    public void TryGet_KnownCode_ReturnsServiceType()
+    public async Task TryGetAsync_KnownCode_ReturnsServiceType()
     {
-        var sut = new JsonServiceTypeProvider(_tempFile);
+        var provider = new JsonServiceTypeProvider(_tempFile);
 
-        var result = sut.TryGet("OIL_CHANGE");
+        var result = await provider.TryGetAsync("OIL_CHANGE");
 
         Assert.NotNull(result);
         Assert.Equal("Oil Change", result!.Description);
@@ -30,21 +30,21 @@ public class JsonServiceTypeProviderTests : IDisposable
     }
 
     [Fact]
-    public void TryGet_UnknownCode_ReturnsNull()
+    public async Task TryGetAsync_UnknownCode_ReturnsNull()
     {
-        var sut = new JsonServiceTypeProvider(_tempFile);
+        var provider = new JsonServiceTypeProvider(_tempFile);
 
-        var result = sut.TryGet("UNKNOWN");
+        var result = await provider.TryGetAsync("UNKNOWN");
 
         Assert.Null(result);
     }
 
     [Fact]
-    public void GetAll_ReturnsAllEntries()
+    public async Task GetAllAsync_ReturnsAllEntries()
     {
-        var sut = new JsonServiceTypeProvider(_tempFile);
+        var provider = new JsonServiceTypeProvider(_tempFile);
 
-        var all = sut.GetAll();
+        var all = await provider.GetAllAsync();
 
         Assert.Equal(2, all.Count);
         Assert.Contains("OIL_CHANGE", all.Keys);

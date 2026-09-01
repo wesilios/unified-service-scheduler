@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Scheduler.Infrastructure.DataAccess;
 
@@ -10,9 +11,11 @@ using Scheduler.Infrastructure.DataAccess;
 namespace Scheduler.Infrastructure.DataAccess.Migrations
 {
     [DbContext(typeof(SchedulerDbContext))]
-    partial class SchedulerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901040734_DropDealershipAndEmbedCustomer")]
+    partial class DropDealershipAndEmbedCustomer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -87,7 +90,7 @@ namespace Scheduler.Infrastructure.DataAccess.Migrations
 
             modelBuilder.Entity("Scheduler.Domain.Entities.Appointment", b =>
                 {
-                    b.OwnsOne("Scheduler.Domain.ValueObjects.Customer", "Customer", b1 =>
+                    b.OwnsOne("Scheduler.Domain.Entities.Customer", "Customer", b1 =>
                         {
                             b1.Property<Guid>("AppointmentId")
                                 .HasColumnType("TEXT");

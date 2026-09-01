@@ -138,6 +138,50 @@ Preferred technologies:
 
 Use Azure concepts where they improve the architecture discussion, but do not introduce Azure-specific infrastructure unnecessarily into the assessment implementation.
 
+# API Response Contract
+
+Every API response — success or failure, every endpoint — is wrapped in one standard envelope:
+
+```jsonc
+{
+  "data": { /* the actual result, or null on failure */ },
+  "statusCode": 201,
+  "message": "Success",              // success message, or the main/summary error message
+  "errors": [                        // empty on success; one entry per error on failure
+    { "errorCode": "OutsideOperatingHours", "errorMessage": "Requested time is outside dealership operating hours." }
+  ]
+}
+```
+
+- `data` — the endpoint's actual result payload (an entity, a query result, whatever the
+  operation returns). `null` on any failure.
+- `statusCode` — the HTTP status code, duplicated into the body so a consumer doesn't need to
+  read response headers to branch on outcome.
+- `message` — a human-readable summary: a success message, or the primary error message.
+- `errors` — an array of `{ errorCode, errorMessage }`, always present (empty on success).
+  This exists specifically for the case where a single request fails for more than one reason
+  at once — e.g. FluentValidation rejecting several fields on the same request — so a
+  consumer gets every failure in one response instead of fixing them one at a time.
+
+**DRY is the requirement, not just a nice-to-have**: the logic that builds this envelope must
+live in exactly one place, not be duplicated per controller/action. Concretely, that means a
+global mechanism (e.g. a result filter registered once for all controllers) does the
+wrapping — individual controller actions keep returning ordinary framework result types
+(`Ok`, `Created`, a `Problem` with the error code in `Extensions`, a validation result) and
+never construct the envelope themselves. Unhandled exceptions need their own hook into the
+same envelope-building code (they don't reach a result filter), but that hook must call the
+same shared construction logic, not reimplement the shape. If you ever find yourself writing
+`new { data = ..., statusCode = ..., message = ..., errors = ... }` inside a controller
+action, that's the DRY violation this rule exists to prevent — go find the shared place
+instead.
+
+See `src/Scheduler.Api/Contracts/ApiResponse.cs` (the envelope + `ApiError` shape),
+`ApiResponseFactory.cs` (the one place both paths below call to build one), and the two
+integration points: `Filters/ApiResponseWrapperFilter.cs` (wraps every controller result) and
+`Middleware/ApiExceptionHandler.cs` (wraps unhandled exceptions). `/health` is the one
+exception — it's a standard health-check convention endpoint, not a business API response, so
+it's deliberately left in its framework-default shape rather than wrapped.
+
 # Skills & Expertise
 
 - Solution Architecture (.NET/Azure)

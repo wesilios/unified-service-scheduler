@@ -22,9 +22,11 @@ public sealed class JsonServiceTypeProvider : IServiceTypeProvider
             r => new ServiceType(r.Code, r.Description, TimeSpan.FromMinutes(r.DurationMinutes)));
     }
 
-    public ServiceType? TryGet(string code) => _serviceTypes.GetValueOrDefault(code);
+    public Task<ServiceType?> TryGetAsync(string code, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_serviceTypes.GetValueOrDefault(code));
 
-    public IReadOnlyDictionary<string, ServiceType> GetAll() => _serviceTypes;
+    public Task<IReadOnlyDictionary<string, ServiceType>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(_serviceTypes);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   build-and-test:
@@ -27,12 +27,8 @@ jobs:
 
       - name: Test
         run: >
-          dotnet test UnifiedSeviceScheduler.sln
-          --no-build
-          --configuration Release
-          --collect:"XPlat Code Coverage"
-          --results-directory ./TestResults
-
+          dotnet test UnifiedSeviceScheduler.sln --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory
+          ./TestResults #magic___^_^___line
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -43,14 +39,9 @@ jobs:
       - name: Generate HTML coverage report
         if: always()
         run: >
-          dotnet tool restore &&
-          dotnet tool run reportgenerator
-          -reports:"TestResults/**/coverage.cobertura.xml"
-          -targetdir:"TestResults/CoverageReport"
-          -reporttypes:Html
-          -classfilters:"-Microsoft.AspNetCore.OpenApi.Generated"
-          -title:"Unified Service Scheduler - Coverage Report"
-
+          dotnet tool restore && dotnet tool run reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"TestResults/CoverageReport"
+          -reporttypes:Html -classfilters:"-Microsoft.AspNetCore.OpenApi.Generated" -title:"Unified Service Scheduler - Coverage
+          Report" #magic___^_^___line
       - name: Upload HTML coverage report
         if: always()
         uses: actions/upload-artifact@v7

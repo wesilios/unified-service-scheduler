@@ -11,17 +11,19 @@ public class AppointmentTests
     [Fact]
     public void Create_ValidInput_PopulatesFields()
     {
-        var customerId = Guid.NewGuid();
         var dealershipId = Guid.NewGuid();
         var technicianId = Guid.NewGuid();
         var serviceBayId = Guid.NewGuid();
 
         var appointment = Appointment.Create(
-            customerId, dealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            dealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             technicianId, serviceBayId, ValidRange);
 
         Assert.NotEqual(Guid.Empty, appointment.Id);
-        Assert.Equal(customerId, appointment.CustomerId);
+        Assert.Equal("Juan Dela Cruz", appointment.Customer.Name);
+        Assert.Equal("juan@example.com", appointment.Customer.Email);
+        Assert.Equal("+639171234567", appointment.Customer.Phone);
         Assert.Equal(dealershipId, appointment.DealershipId);
         Assert.Equal("Toyota - Vios - Vios G 2019", appointment.Vehicle);
         Assert.Equal("OIL_CHANGE", appointment.ServiceTypeCode);
@@ -32,10 +34,20 @@ public class AppointmentTests
     }
 
     [Fact]
+    public void Create_EmptyCustomerName_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => Appointment.Create(
+            "", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            Guid.NewGuid(), Guid.NewGuid(), ValidRange));
+    }
+
+    [Fact]
     public void Create_EmptyVehicle_Throws()
     {
         Assert.Throws<ArgumentException>(() => Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "", "OIL_CHANGE",
             Guid.NewGuid(), Guid.NewGuid(), ValidRange));
     }
 
@@ -43,7 +55,8 @@ public class AppointmentTests
     public void Create_WhitespaceVehicle_Throws()
     {
         Assert.Throws<ArgumentException>(() => Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "   ", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "   ", "OIL_CHANGE",
             Guid.NewGuid(), Guid.NewGuid(), ValidRange));
     }
 
@@ -51,7 +64,8 @@ public class AppointmentTests
     public void Create_EmptyServiceTypeCode_Throws()
     {
         Assert.Throws<ArgumentException>(() => Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "",
             Guid.NewGuid(), Guid.NewGuid(), ValidRange));
     }
 
@@ -67,7 +81,8 @@ public class AppointmentTests
         var serviceBayId = Guid.NewGuid();
 
         var appointment = Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             technicianId, serviceBayId, range);
 
         Assert.Equal(expectedSlotCount, appointment.Slots.Count);

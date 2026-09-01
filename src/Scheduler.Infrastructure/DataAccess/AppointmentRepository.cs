@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Scheduler.Application.Interfaces;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.ValueObjects;
 
 namespace Scheduler.Infrastructure.DataAccess;

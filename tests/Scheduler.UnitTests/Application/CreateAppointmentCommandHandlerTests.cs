@@ -6,6 +6,7 @@ using Scheduler.Application.Results;
 using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
+using Scheduler.Domain.Repositories;
 using Scheduler.Domain.ValueObjects;
 
 namespace Scheduler.UnitTests.Application;
@@ -13,11 +14,10 @@ namespace Scheduler.UnitTests.Application;
 public class CreateAppointmentCommandHandlerTests
 {
     private readonly Mock<IAppointmentRepository> _appointments = new();
-    private readonly Mock<IDealershipRepository> _dealerships = new();
-    private readonly Mock<ITechnicianService> _technicianService = new();
-    private readonly Mock<IServiceBayService> _serviceBayService = new();
+    private readonly Mock<IDealershipProvider> _dealershipProvider = new();
+    private readonly Mock<ITechnicianProvider> _technicianProvider = new();
+    private readonly Mock<IServiceBayProvider> _serviceBayProvider = new();
     private readonly Mock<IServiceTypeProvider> _serviceTypeProvider = new();
-    private readonly Mock<ICustomerRepository> _customers = new();
     private readonly Mock<INotificationService> _notificationService = new();
     private readonly Mock<IAvailabilityCache> _availabilityCache = new();
 
@@ -35,44 +35,39 @@ public class CreateAppointmentCommandHandlerTests
 
     private void SetupHappyPathDependencies()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _serviceBayService.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _dealerships.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync(OilChange);
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Appointment>());
     }
 
-    private CreateAppointmentCommandHandler CreateSut()
+    private CreateAppointmentCommandHandler CreateHandler()
     {
         var checker = new AppointmentAvailabilityChecker(
-            _dealerships.Object, _technicianService.Object, _serviceBayService.Object,
+            _dealershipProvider.Object, _technicianProvider.Object, _serviceBayProvider.Object,
             _serviceTypeProvider.Object, _appointments.Object);
 
         return new CreateAppointmentCommandHandler(
-            checker, _appointments.Object, _customers.Object, _notificationService.Object, _availabilityCache.Object);
+            checker, _appointments.Object, _notificationService.Object, _availabilityCache.Object);
     }
 
     [Fact]
-    public async Task HandleAsync_NewCustomer_CreatesCustomerAndAppointment()
+    public async Task HandleAsync_ValidRequest_CreatesAppointmentWithEmbeddedCustomer()
     {
         SetupHappyPathDependencies();
-        _customers
-            .Setup(x => x.FindByEmailAndPhoneAsync("juan@example.com", "+639171234567", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Customer?)null);
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Success, result.Status);
         Assert.NotNull(result.Appointment);
-        _customers.Verify(
-            x => x.AddAsync(
-                It.Is<Customer>(c => c.Name == "Juan Dela Cruz" && c.Email == "juan@example.com"),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        Assert.Equal("Juan Dela Cruz", result.Appointment!.Customer.Name);
+        Assert.Equal("juan@example.com", result.Appointment.Customer.Email);
+        Assert.Equal("+639171234567", result.Appointment.Customer.Phone);
         _appointments.Verify(x => x.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()), Times.Once);
         _availabilityCache.Verify(
             x => x.InvalidateAsync(TechnicianId, ServiceBayId, It.IsAny<CancellationToken>()), Times.Once);
@@ -81,57 +76,29 @@ public class CreateAppointmentCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_ExistingCustomer_ReusesCustomerRecord()
+    public async Task HandleAsync_RepeatCustomer_EachBookingGetsItsOwnEmbeddedCustomer()
     {
         SetupHappyPathDependencies();
-        var existingCustomer = new Customer(Guid.NewGuid(), "Juan Dela Cruz", "juan@example.com", "+639171234567");
-        _customers
-            .Setup(x => x.FindByEmailAndPhoneAsync("juan@example.com", "+639171234567", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingCustomer);
+        var handler = CreateHandler();
 
-        var sut = CreateSut();
+        var first = (AppointmentResult)await handler.HandleAsync(ValidCommand);
+        var second = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
-
-        Assert.Equal(AppointmentResultStatus.Success, result.Status);
-        Assert.Equal(existingCustomer.Id, result.Appointment!.CustomerId);
-        _customers.Verify(x => x.AddAsync(It.IsAny<Customer>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(AppointmentResultStatus.Success, first.Status);
+        Assert.Equal(AppointmentResultStatus.Success, second.Status);
+        Assert.NotEqual(first.Appointment!.Id, second.Appointment!.Id);
+        Assert.Equal(first.Appointment.Customer.Email, second.Appointment.Customer.Email);
     }
 
     [Fact]
-    public async Task HandleAsync_CustomerCreationRace_ResolvesViaReQuery()
+    public async Task HandleAsync_UnknownServiceType_ReturnsFailureWithoutTouchingAppointmentRepo()
     {
-        SetupHappyPathDependencies();
-        var existingCustomer = new Customer(Guid.NewGuid(), "Juan Dela Cruz", "juan@example.com", "+639171234567");
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
+        var handler = CreateHandler();
 
-        _customers
-            .SetupSequence(x => x.FindByEmailAndPhoneAsync("juan@example.com", "+639171234567", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Customer?)null)
-            .ReturnsAsync(existingCustomer);
-        _customers
-            .Setup(x => x.AddAsync(It.IsAny<Customer>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new CustomerConflictException("race"));
-
-        var sut = CreateSut();
-
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
-
-        Assert.Equal(AppointmentResultStatus.Success, result.Status);
-        Assert.Equal(existingCustomer.Id, result.Appointment!.CustomerId);
-    }
-
-    [Fact]
-    public async Task HandleAsync_UnknownServiceType_ReturnsFailureWithoutTouchingCustomerOrAppointmentRepos()
-    {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns((ServiceType?)null);
-        var sut = CreateSut();
-
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.InvalidServiceType, result.Status);
-        _customers.Verify(
-            x => x.FindByEmailAndPhoneAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
         _appointments.Verify(x => x.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -139,10 +106,10 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_InvalidTechnician_ReturnsInvalidResource()
     {
         SetupHappyPathDependencies();
-        _technicianService.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        var sut = CreateSut();
+        _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.InvalidResource, result.Status);
     }
@@ -151,10 +118,10 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_OutsideOperatingHours_ReturnsOutsideOperatingHours()
     {
         SetupHappyPathDependencies();
-        var sut = CreateSut();
+        var handler = CreateHandler();
         var earlyCommand = ValidCommand with { StartTime = new DateTime(2026, 9, 7, 6, 0, 0) };
 
-        var result = (AppointmentResult)await sut.HandleAsync(earlyCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(earlyCommand);
 
         Assert.Equal(AppointmentResultStatus.OutsideOperatingHours, result.Status);
     }
@@ -164,15 +131,16 @@ public class CreateAppointmentCommandHandlerTests
     {
         SetupHappyPathDependencies();
         var existing = Appointment.Create(
-            Guid.NewGuid(), DealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Existing Customer", "existing@example.com", "+639170000000",
+            DealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             TechnicianId, ServiceBayId, new TimeRange(StartTime, StartTime.AddMinutes(30)));
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([existing]);
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Conflict, result.Status);
     }
@@ -181,16 +149,13 @@ public class CreateAppointmentCommandHandlerTests
     public async Task HandleAsync_InsertConflict_ReturnsConflict()
     {
         SetupHappyPathDependencies();
-        _customers
-            .Setup(x => x.FindByEmailAndPhoneAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Customer?)null);
         _appointments
             .Setup(x => x.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new AppointmentConflictException("lost the race"));
 
-        var sut = CreateSut();
+        var handler = CreateHandler();
 
-        var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);
+        var result = (AppointmentResult)await handler.HandleAsync(ValidCommand);
 
         Assert.Equal(AppointmentResultStatus.Conflict, result.Status);
         _notificationService.Verify(

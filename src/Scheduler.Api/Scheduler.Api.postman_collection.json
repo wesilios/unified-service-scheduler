@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "9c1c9a3e-6b2f-4b6a-8b1d-0f1a2b3c4d5e",
     "name": "Unified Service Scheduler",
-    "description": "Manual/exploratory API testing for the Unified Service Scheduler assessment - mirrors the scenarios covered by Scheduler.IntegrationTests (see README.md's \"Integration Tests\" section). Booking times are computed by the collection-level pre-request script (Postman > this collection > Pre-request Script tab) instead of hardcoded, so every run targets a fresh, still-valid slot instead of a date that eventually lands in the past or collides with a slot already booked in a previous run.\n\nBefore running: start the API - `dotnet run --project src/Scheduler.Api` - and confirm `baseUrl` (a collection variable, Variables tab) matches, default `http://localhost:5207` (the default \"http\" launch profile).\n\nFolders:\n1. Happy Path & Validation - run top to bottom, or use Collection Runner.\n2. Double Booking (Sequential) - proves the guarantee holds when one request finishes before the next starts (the easy case).\n\nFor the project's actual concurrency requirement - many requests racing for the same slot with none of them finished before the others start - use `scripts/concurrency-demo.js` (`node scripts/concurrency-demo.js`) instead of Postman. Postman's Collection Runner sends requests sequentially, so it can't reproduce genuine concurrent dispatch; the Node script fires real parallel requests via Promise.all. See README.md's \"Concurrency demo script\" section.",
+    "description": "Manual/exploratory API testing for the Unified Service Scheduler assessment - mirrors the scenarios covered by Scheduler.IntegrationTests (see README.md's \"Integration Tests\" section). Every business-endpoint response (everything except /health) is wrapped in the standard ApiResponse envelope - see Agent.md's \"API Response Contract\" section: { data, statusCode, message, errors[] }. Success responses put the real payload under data with an empty errors array; failures set data to null and populate errors with one { errorCode, errorMessage } entry per failure (more than one entry when a request fails validation on multiple fields at once).\n\nBooking times are computed by the collection-level pre-request script (Postman > this collection > Pre-request Script tab) instead of hardcoded, so every run targets a fresh, still-valid slot instead of a date that eventually lands in the past or collides with a slot already booked in a previous run.\n\nBefore running: start the API - `dotnet run --project src/Scheduler.Api` - and confirm `baseUrl` (a collection variable, Variables tab) matches, default `http://localhost:5207` (the default \"http\" launch profile).\n\nFolders:\n1. Happy Path & Validation - run top to bottom, or use Collection Runner.\n2. Double Booking (Sequential) - proves the guarantee holds when one request finishes before the next starts (the easy case).\n\nFor the project's actual concurrency requirement - many requests racing for the same slot with none of them finished before the others start - use `scripts/concurrency-demo.js` (`node scripts/concurrency-demo.js`) instead of Postman. Postman's Collection Runner sends requests sequentially, so it can't reproduce genuine concurrent dispatch; the Node script fires real parallel requests via Promise.all. See README.md's \"Concurrency demo script\" section.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -95,7 +95,7 @@
                 "health"
               ]
             },
-            "description": "Liveness check - confirms the API is up before running anything else."
+            "description": "Liveness check - confirms the API is up before running anything else. Not wrapped in the ApiResponse envelope - it's a standard health-check convention endpoint, plain text \"Healthy\", not a business API response."
           },
           "event": [
             {
@@ -143,7 +143,7 @@
                 }
               }
             },
-            "description": "Guest checkout - no login required. Seeded Dealership id is the one created by the InitialCreate migration. Sends a fixed X-Correlation-Id and checks the middleware echoes it back verbatim."
+            "description": "Guest checkout - no login required. Seeded Dealership id is the one created by the InitialCreate migration. Sends a fixed X-Correlation-Id and checks the middleware echoes it back verbatim. Response body is the standard ApiResponse envelope - the appointment itself is under data."
           },
           "event": [
             {
@@ -154,9 +154,16 @@
                   "pm.test(\"Status code is 201\", function () {",
                   "    pm.response.to.have.status(201);",
                   "});",
-                  "pm.test(\"Response has 4 appointment slots (30-min OIL_CHANGE = 2 slots x 2 resources)\", function () {",
+                  "pm.test(\"Envelope statusCode is 201\", function () {",
+                  "    pm.expect(pm.response.json().statusCode).to.eql(201);",
+                  "});",
+                  "pm.test(\"Envelope message is Success and errors is empty\", function () {",
                   "    const body = pm.response.json();",
-                  "    pm.expect(body.slots.length).to.eql(4);",
+                  "    pm.expect(body.message).to.eql(\"Success\");",
+                  "    pm.expect(body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});",
+                  "pm.test(\"data.slots has 4 entries (30-min OIL_CHANGE = 2 slots x 2 resources)\", function () {",
+                  "    pm.expect(pm.response.json().data.slots.length).to.eql(4);",
                   "});",
                   "pm.test(\"X-Correlation-Id is echoed back verbatim\", function () {",
                   "    pm.expect(pm.response.headers.get(\"X-Correlation-Id\")).to.eql(\"postman-demo-001\");",
@@ -208,7 +215,7 @@
                 }
               ]
             },
-            "description": "Run this after 'Create appointment (happy path)' - should report the just-booked slot as unavailable."
+            "description": "Run this after 'Create appointment (happy path)' - should report the just-booked slot as unavailable (data.available)."
           },
           "event": [
             {
@@ -219,8 +226,8 @@
                   "pm.test(\"Status code is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test(\"Slot is reported unavailable\", function () {",
-                  "    pm.expect(pm.response.json().available).to.eql(false);",
+                  "pm.test(\"data.available is false\", function () {",
+                  "    pm.expect(pm.response.json().data.available).to.eql(false);",
                   "});"
                 ]
               }
@@ -269,7 +276,7 @@
                 }
               ]
             },
-            "description": "Different technician/bay/time from anything booked in this run - should report available."
+            "description": "Different technician/bay/time from anything booked in this run - should report available (data.available)."
           },
           "event": [
             {
@@ -280,8 +287,8 @@
                   "pm.test(\"Status code is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test(\"Slot is reported available\", function () {",
-                  "    pm.expect(pm.response.json().available).to.eql(true);",
+                  "pm.test(\"data.available is true\", function () {",
+                  "    pm.expect(pm.response.json().data.available).to.eql(true);",
                   "});"
                 ]
               }
@@ -316,7 +323,7 @@
                 }
               }
             },
-            "description": "Same Email+Phone as the first booking, different slot - should reuse the existing Customer record rather than create a duplicate. No X-Correlation-Id header is sent here, so the middleware mints a fresh one - check the response headers for it."
+            "description": "Same Name/Email/Phone as the first booking, different slot - Customer is a Value Object embedded directly on each Appointment (not a shared record), so this succeeds as an independent booking carrying the same customer details (data.customer.email/phone match the first request), not a lookup-and-reuse of any existing record. No X-Correlation-Id header is sent here, so the middleware mints a fresh one - check the response headers for it."
           },
           "event": [
             {
@@ -326,6 +333,12 @@
                 "exec": [
                   "pm.test(\"Status code is 201\", function () {",
                   "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"data.customer carries the same embedded Name/Email/Phone as the request body\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.customer.name).to.eql(\"Juan Dela Cruz\");",
+                  "    pm.expect(body.data.customer.email).to.eql(\"juan@example.com\");",
+                  "    pm.expect(body.data.customer.phone).to.eql(\"+639171234567\");",
                   "});"
                 ]
               }
@@ -360,7 +373,7 @@
                 }
               }
             },
-            "description": "07:00, before the 08:00 opening - expect 400."
+            "description": "07:00, before the 08:00 opening - expect 400, with data null and errors[0].errorCode = OutsideOperatingHours."
           },
           "event": [
             {
@@ -370,6 +383,11 @@
                 "exec": [
                   "pm.test(\"Status code is 400\", function () {",
                   "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"Envelope data is null and errors contains OutsideOperatingHours\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.null;",
+                  "    pm.expect(body.errors.some(e => e.errorCode === \"OutsideOperatingHours\")).to.be.true;",
                   "});"
                 ]
               }
@@ -404,7 +422,7 @@
                 }
               }
             },
-            "description": "Empty-GUID technician - caught by FluentValidation before reaching the mock service, expect 400 with validation problem details."
+            "description": "Empty-GUID technician - caught by FluentValidation before reaching the mock service, expect 400 with data null and errors[0].errorCode = TechnicianId."
           },
           "event": [
             {
@@ -414,6 +432,11 @@
                 "exec": [
                   "pm.test(\"Status code is 400\", function () {",
                   "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"Envelope data is null and errors contains TechnicianId\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.null;",
+                  "    pm.expect(body.errors.some(e => e.errorCode === \"TechnicianId\")).to.be.true;",
                   "});"
                 ]
               }
@@ -505,6 +528,11 @@
                 "exec": [
                   "pm.test(\"Status code is 409 (double-booking rejected)\", function () {",
                   "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test(\"Envelope data is null and errors contains Conflict\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.null;",
+                  "    pm.expect(body.errors.some(e => e.errorCode === \"Conflict\")).to.be.true;",
                   "});"
                 ]
               }
@@ -512,7 +540,7 @@
           ]
         }
       ],
-      "description": "Book a slot, then immediately try to book the exact same Technician/Service Bay/time again. Run in order, top to bottom (or Collection Runner). First request: 201 Created. Second: 409 Conflict. This proves the guarantee holds when one request finishes before the next starts - the easy case. For the project's real concurrency requirement (many requests racing for the same slot at once), use scripts/concurrency-demo.js instead - see README.md."
+      "description": "Book a slot, then immediately try to book the exact same Technician/Service Bay/time again. Run in order, top to bottom (or Collection Runner). First request: 201 Created. Second: 409 Conflict, with errors[0].errorCode = Conflict. This proves the guarantee holds when one request finishes before the next starts - the easy case. For the project's real concurrency requirement (many requests racing for the same slot at once), use scripts/concurrency-demo.js instead - see README.md."
     }
   ]
 }
