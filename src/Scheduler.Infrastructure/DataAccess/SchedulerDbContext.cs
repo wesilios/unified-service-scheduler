@@ -16,7 +16,6 @@ public class SchedulerDbContext : DbContext
 
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<AppointmentSlot> AppointmentSlots => Set<AppointmentSlot>();
-    public DbSet<Customer> Customers => Set<Customer>();
 
     // Each entity's Fluent API configuration lives in its own IEntityTypeConfiguration<T>
     // class under DataAccess/Configurations/ — keeps this file small as the model grows;

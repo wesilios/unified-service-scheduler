@@ -20,6 +20,14 @@ public sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appointm
         });
         builder.Navigation(a => a.Duration).IsRequired();
 
+        builder.OwnsOne(a => a.Customer, customer =>
+        {
+            customer.Property(c => c.Name).HasColumnName("CustomerName").IsRequired().HasMaxLength(200);
+            customer.Property(c => c.Email).HasColumnName("CustomerEmail").HasMaxLength(200);
+            customer.Property(c => c.Phone).HasColumnName("CustomerPhone").HasMaxLength(50);
+        });
+        builder.Navigation(a => a.Customer).IsRequired();
+
         builder.HasMany(a => a.Slots)
             .WithOne()
             .HasForeignKey(s => s.AppointmentId)

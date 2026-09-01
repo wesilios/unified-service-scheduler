@@ -102,7 +102,8 @@ public class AppointmentAvailabilityCheckerTests
     {
         SetupHappyPathDependencies();
         var existing = Appointment.Create(
-            Guid.NewGuid(), DealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            DealershipId, "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             TechnicianId, ServiceBayId, new TimeRange(StartTime, StartTime.AddMinutes(30)));
         _appointments
             .Setup(x => x.GetOverlappingAsync(TechnicianId, ServiceBayId, It.IsAny<TimeRange>(), It.IsAny<CancellationToken>()))

@@ -147,13 +147,17 @@ public class AppointmentBookingTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAppointment_SameCustomerTwice_ReusesCustomerId()
+    public async Task CreateAppointment_SameCustomerTwice_BothSucceedWithIndependentEmbeddedCustomer()
     {
+        // Customer is a Value Object owned by Appointment, not a shared entity — two bookings
+        // from the same person are two independent rows carrying matching Name/Email/Phone
+        // values, not one shared identity. See Domain Assumptions > Customer.
         var first = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 9, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         var firstEnvelope = await first.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
 
         var second = await _client.PostAsJsonAsync(
@@ -161,10 +165,14 @@ public class AppointmentBookingTests : IDisposable
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 13, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         var secondEnvelope = await second.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
 
-        Assert.NotEqual(Guid.Empty, firstEnvelope!.Data!.CustomerId);
-        Assert.Equal(firstEnvelope.Data!.CustomerId, secondEnvelope!.Data!.CustomerId);
+        Assert.NotEqual(firstEnvelope!.Data!.Id, secondEnvelope!.Data!.Id);
+        Assert.Equal(firstEnvelope.Data!.Customer.Email, secondEnvelope.Data!.Customer.Email);
+        Assert.Equal(firstEnvelope.Data!.Customer.Phone, secondEnvelope.Data!.Customer.Phone);
+        Assert.Equal("Juan Dela Cruz", firstEnvelope.Data!.Customer.Name);
+        Assert.Equal("Juan Dela Cruz", secondEnvelope.Data!.Customer.Name);
     }
 
     [Fact]
@@ -273,8 +281,12 @@ public class AppointmentBookingTests : IDisposable
 // ApiResponseWrapperFilter) but typed, so tests can deserialize Data directly instead of
 // re-parsing JsonElement each time. AppointmentResponse is deliberately not the domain
 // Appointment entity, which has private setters and can't be deserialized by System.Text.Json.
+// Customer is embedded as its own value (Value Object, not a CustomerId reference) — see
+// Domain Assumptions > Customer.
 internal sealed record ApiEnvelope<T>(T? Data, int StatusCode, string Message, List<ApiErrorResponse> Errors);
 
 internal sealed record ApiErrorResponse(string ErrorCode, string ErrorMessage);
 
-internal sealed record AppointmentResponse(Guid Id, Guid CustomerId, List<JsonElement> Slots);
+internal sealed record AppointmentResponse(Guid Id, CustomerResponse Customer, List<JsonElement> Slots);
+
+internal sealed record CustomerResponse(string Name, string Email, string Phone);
