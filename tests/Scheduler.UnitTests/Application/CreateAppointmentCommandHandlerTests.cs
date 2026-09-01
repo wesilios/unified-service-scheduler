@@ -35,7 +35,7 @@ public class CreateAppointmentCommandHandlerTests
 
     private void SetupHappyPathDependencies()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync(OilChange);
         _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
@@ -93,7 +93,7 @@ public class CreateAppointmentCommandHandlerTests
     [Fact]
     public async Task HandleAsync_UnknownServiceType_ReturnsFailureWithoutTouchingAppointmentRepo()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns((ServiceType?)null);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
         var sut = CreateSut();
 
         var result = (AppointmentResult)await sut.HandleAsync(ValidCommand);

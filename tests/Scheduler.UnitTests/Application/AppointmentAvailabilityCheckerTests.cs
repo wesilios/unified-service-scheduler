@@ -29,7 +29,7 @@ public class AppointmentAvailabilityCheckerTests
 
     private void SetupHappyPathDependencies()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync(OilChange);
         _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
@@ -41,7 +41,7 @@ public class AppointmentAvailabilityCheckerTests
     [Fact]
     public async Task CheckAsync_UnknownServiceType_ReturnsInvalidServiceType()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("UNKNOWN")).Returns((ServiceType?)null);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("UNKNOWN", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
         var sut = CreateSut();
 
         var result = await sut.CheckAsync(DealershipId, TechnicianId, ServiceBayId, "UNKNOWN", StartTime);

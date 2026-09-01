@@ -47,7 +47,7 @@ public sealed class AppointmentAvailabilityChecker
         ServiceType? serviceType;
         using (SchedulerInstrumentation.ActivitySource.StartActivity("ServiceType lookup"))
         {
-            serviceType = _serviceTypeProvider.TryGet(serviceTypeCode);
+            serviceType = await _serviceTypeProvider.TryGetAsync(serviceTypeCode, cancellationToken);
         }
 
         if (serviceType is null)

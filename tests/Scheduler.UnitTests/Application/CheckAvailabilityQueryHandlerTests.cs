@@ -35,7 +35,7 @@ public class CheckAvailabilityQueryHandlerTests
     [Fact]
     public async Task HandleAsync_AvailableSlot_ReturnsAvailable()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("OIL_CHANGE")).Returns(OilChange);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("OIL_CHANGE", It.IsAny<CancellationToken>())).ReturnsAsync(OilChange);
         _technicianProvider.Setup(x => x.ExistsAsync(TechnicianId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _serviceBayProvider.Setup(x => x.ExistsAsync(ServiceBayId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _dealershipProvider.Setup(x => x.GetAsync(DealershipId, It.IsAny<CancellationToken>())).ReturnsAsync(Dealership);
@@ -55,7 +55,7 @@ public class CheckAvailabilityQueryHandlerTests
     [Fact]
     public async Task HandleAsync_UnknownServiceType_ReturnsInvalidServiceType()
     {
-        _serviceTypeProvider.Setup(x => x.TryGet("UNKNOWN")).Returns((ServiceType?)null);
+        _serviceTypeProvider.Setup(x => x.TryGetAsync("UNKNOWN", It.IsAny<CancellationToken>())).ReturnsAsync((ServiceType?)null);
 
         var sut = CreateSut();
         var query = new CheckAvailabilityQuery(DealershipId, TechnicianId, ServiceBayId, "UNKNOWN", StartTime);
