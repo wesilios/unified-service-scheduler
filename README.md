@@ -9,30 +9,31 @@ time.
 
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Building](#building)
-    - [Running the Application](#running-the-application)
-    - [Database Migrations](#database-migrations)
-    - [Testing](#testing)
-        - [Unit Tests](#unit-tests)
-        - [Integration Tests](#integration-tests)
-        - [Manual API testing](#manual-api-testing)
-            - [Postman collection](#postman-collection)
-            - [Concurrency demo script](#concurrency-demo-script)
+  - [Prerequisites](#prerequisites)
+  - [Building](#building)
+  - [Running the Application](#running-the-application)
+  - [Database Migrations](#database-migrations)
+  - [Testing](#testing)
+    - [Unit Tests](#unit-tests)
+    - [Integration Tests](#integration-tests)
+    - [Manual API testing](#manual-api-testing)
+      - [Postman collection](#postman-collection)
+      - [Concurrency demo script](#concurrency-demo-script)
 - [Deployment](#deployment)
-    - [A note on the database](#a-note-on-the-database)
-    - [Secrets and connection strings](#secrets-and-connection-strings)
-    - [As build artifacts](#as-build-artifacts)
-    - [As a Docker container](#as-a-docker-container)
+  - [A note on the database](#a-note-on-the-database)
+  - [Secrets and connection strings](#secrets-and-connection-strings)
+  - [As build artifacts](#as-build-artifacts)
+  - [As a Docker container](#as-a-docker-container)
 - [CI/CD](#cicd)
-    - [GitHub Actions](#github-actions)
-    - [Dependabot](#dependabot)
+  - [GitHub Actions](#github-actions)
+  - [Dependabot](#dependabot)
 - [AI Collaboration Narrative](#ai-collaboration-narrative)
-    - [How I use AI](#how-i-use-ai)
-    - [How I structured the requirement file](#how-i-structured-the-requirement-file)
-    - [Using the C4 diagrams and data flow to structure and check the logic](#using-the-c4-diagrams-and-data-flow-to-structure-and-check-the-logic)
-    - [How I verified and refined AI output](#how-i-verified-and-refined-ai-output)
-    - [How I ensured final quality](#how-i-ensured-final-quality)
+  - [How I use my AI](#how-i-use-my-ai)
+    - [Starting with a clear brief](#starting-with-a-clear-brief)
+    - [Using Architecture to Validate the Solution](#using-architecture-to-validate-the-solution)
+    - [The AI was useful, but I didn't treat it as the authority](#the-ai-was-useful-but-i-didnt-treat-it-as-the-authority)
+  - [Verification was part of the development process](#verification-was-part-of-the-development-process)
+  - [What the AI contributed](#what-the-ai-contributed)
 
 ## Architecture
 
@@ -45,7 +46,7 @@ implementation progress task by task, if you want to see how the project actuall
 ### Prerequisites
 
 | Tool                                                                                          | Required?                                                 | Needed for                                                                                                 |
-|-----------------------------------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)                              | **Required**                                              | Building, running, and testing the app                                                                     |
 | `dotnet-ef` global tool (`dotnet tool install --global dotnet-ef`)                            | Optional — required to add a migration                    | [Database Migrations](#database-migrations) (`dotnet ef migrations add ...`); not needed to build/run/test |
 | [Node.js 18+](https://nodejs.org/) (built-in `fetch`/`crypto.randomUUID()`, no `npm install`) | Optional — required for the concurrency demo script       | [Concurrency demo script](#concurrency-demo-script) (`node scripts/concurrency-demo.js`)                   |
@@ -81,7 +82,7 @@ migration automatically — creating `scheduler.db` next to the running executab
 something to book against:
 
 | Field           | Value                                  |
-|-----------------|----------------------------------------|
+| --------------- | -------------------------------------- |
 | Id              | `11111111-1111-1111-1111-111111111111` |
 | Name            | Downtown Dealership                    |
 | Operating hours | Mon–Sat, 08:00–17:00 (closed Sunday)   |
@@ -89,7 +90,7 @@ something to book against:
 **Endpoints:**
 
 | Endpoint                         | Purpose                                                                          |
-|----------------------------------|----------------------------------------------------------------------------------|
+| -------------------------------- | -------------------------------------------------------------------------------- |
 | `POST /appointments`             | Book an appointment (guest checkout — see Domain Assumptions in architecture.md) |
 | `GET /appointments/availability` | Check whether a Technician/Service Bay/time slot is free, without booking        |
 | `GET /health`                    | Liveness check                                                                   |
@@ -114,7 +115,7 @@ automated test suite.
 **Service types you can book** (see `src/Scheduler.Infrastructure/Data/servicetypes.json`):
 
 | Code                  | Description               | Duration |
-|-----------------------|---------------------------|----------|
+| --------------------- | ------------------------- | -------- |
 | `OIL_CHANGE`          | Oil Change                | 30 min   |
 | `TIRE_CHANGE`         | Tire Change / Replacement | 60 min   |
 | `BRAKE_INSPECTION`    | Brake Inspection          | 45 min   |
@@ -128,7 +129,7 @@ is accepted. See architecture.md's Domain Assumptions for why, and the plan for 
 **Configuration:**
 
 | Setting                         | Location                                               | Purpose                                                                                                                                   |
-|---------------------------------|--------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `ConnectionStrings:SchedulerDb` | `appsettings.json`                                     | SQLite by default — see [A note on the database](#a-note-on-the-database)                                                                 |
 | `Serilog:*`                     | `serilog.json`                                         | Logging sinks, output template, level overrides — kept out of `Program.cs` deliberately                                                   |
 | `OpenTelemetry` OTLP endpoint   | `serilog.json` (`WriteTo:OpenTelemetry:Args:endpoint`) | Traces/metrics/logs export target; defaults to `http://localhost:4317` and fails quietly if nothing's listening — see architecture.md §10 |
@@ -168,7 +169,7 @@ dotnet test tests/Scheduler.UnitTests
 ```
 
 | Test class                                                  | Tests | Covers                                                                                                                             |
-|-------------------------------------------------------------|-------|------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `AppointmentSchedulingPolicyTests`                          | 10    | Domain policy: operating-hours boundaries (exactly-at-open/close, before/after), Sunday closure, cross-midnight, overlap detection |
 | `CreateAppointmentCommandValidatorTests`                    | 10    | FluentValidation rules for the booking request (every required-field/empty/past-time branch)                                       |
 | `TimeRangeTests`                                            | 8     | Domain value object: construction validation, `Overlaps` incl. adjacency edge cases, equality                                      |
@@ -217,7 +218,7 @@ dotnet test tests/Scheduler.IntegrationTests
 `SchedulerApiFactory : WebApplicationFactory<Program>`, one isolated temp SQLite file per test class instance:
 
 | Test                                                                   | Proves                                                                                                                                                                                                      |
-|------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CreateAppointment_ConcurrentRequestsForSameSlot_ExactlyOneSucceeds`   | **The core requirement** — 8 genuinely parallel requests for the same slot, exactly one `201` + seven `409`s. See [Demonstrating the concurrency guarantee](#demonstrating-the-concurrency-guarantee) below |
 | `CreateAppointment_ValidRequest_Returns201WithSlots`                   | Happy path — `201` plus the generated `AppointmentSlot` rows                                                                                                                                                |
 | `CreateAppointment_SameSlotTwice_SecondReturns409`                     | Double-booking rejected even without a race — first booking wins, an immediate second attempt at the identical slot is rejected                                                                             |
@@ -293,7 +294,7 @@ dotnet run --project src/Scheduler.Api
 the app) and you get two folders:
 
 | Folder                      | What it demonstrates                                                                                                                                                                                                                                                                                                                                                                                                               |
-|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Happy Path & Validation     | The same 7 scenarios as the "happy path" rows in the Integration Tests table above — health check, create/re-check availability, repeat-customer dedupe, the two 400 branches. Each request has `pm.test(...)` assertions checking both the HTTP status and the `ApiResponse` envelope fields (`statusCode`, `data`, `errors[].errorCode`), so a full Collection Runner pass gives you a pass/fail summary, not just raw responses |
 | Double Booking (Sequential) | Book a slot, then immediately rebook the identical one — `201` then `409` (with `errors[0].errorCode` = `Conflict`). Proves the guarantee holds when one request finishes before the next starts — the easy case, not the project's real concurrency requirement (that's the script below)                                                                                                                                         |
 
@@ -479,10 +480,10 @@ My workflow was fairly simple:
 ```mermaid
 flowchart LR
     S["New session starts —<br/>reads TASKS.md"] --> A["Pick up the next<br/>open item"]
-    A --> B["AI drafts one piece<br/>(doc, diagram, or class)"]
+    A --> B["AI agent drafts one piece<br/>(doc, diagram, or class)"]
     B --> C{"I review it"}
     C -- " looks right " --> D["Build on top of it"]
-    C -- " needs a fix " --> E["I push back,<br/>AI revises"]
+    C -- " needs a fix " --> E["I push back,<br/>AI agent revises"]
     E --> C
     D --> F["Verify with real evidence<br/>(tests, curl, Docker run)"]
     F --> G["TASKS.md records<br/>what happened and why"]
@@ -490,15 +491,15 @@ flowchart LR
     G -. " session ends " .-> S
 ```
 
-This was important because I didn't want AI to generate the whole project and then have me review hundreds of lines of
+This was important because I didn't want the AI agent to generate the whole project and then have me review hundreds of lines of
 code at the end. I preferred to work through it in smaller pieces: design something, review it, implement it, test it,
 and then move to the next piece.
 
-### How I use AI
+### How I use my AI
 
 #### Starting with a clear brief
 
-Before writing code, I created Agent.md to define how I wanted the AI to work with me.
+Before writing code, I created Agent.md to define how I wanted the AI agent to work with me.
 
 I gave it the role of a Senior Solution Architect / Software Engineer and described the domain assumptions, engineering
 priorities, and constraints of the assessment. I also ranked the priorities so there was less room for ambiguity when
@@ -534,22 +535,22 @@ handling early in the design process.
 I also used the diagrams as a reference throughout development. When an implementation decision changed, I reviewed
 whether the architecture and documentation still represented the actual system and updated them when necessary.
 
-#### AI was useful, but I didn't treat it as the authority
+#### The AI was useful, but I didn't treat it as the authority
 
-I did not treat AI-generated suggestions as final decisions. I used them as a starting point and reviewed them against
+I did not treat the AI's suggestions as final decisions. I used them as a starting point and reviewed them against
 the requirements, architecture, and expected production behavior.
 
 1. Concurrency: I challenged the booking implementation around concurrent requests rather than assuming that a normal
    availability check was sufficient. I verified the behavior with concurrent requests against the same time slot and
    confirmed that the system maintained the expected booking constraint.
-2. Architecture trade-offs: When there were multiple reasonable approaches, I asked AI to explain the trade-offs rather
+2. Architecture trade-offs: When there were multiple reasonable approaches, I asked the agent to explain the trade-offs rather
    than simply choosing the first suggestion. This included decisions around the database, API structure, concurrency
    control, caching, and how much complexity was appropriate for the assessment.
-3. Requirements and assumptions: Where the assessment requirements were ambiguous, I used AI to explore possible
+3. Requirements and assumptions: Where the assessment requirements were ambiguous, I used the agent to explore possible
    interpretations, then selected and documented the assumptions that best represented a realistic dealership scenario.
    This included operating hours, Technician and Service Bay availability, service duration, and future resource
    constraints.
-4. Design consistency: I used AI to review whether the implementation remained consistent with the architecture and
+4. Design consistency: I used the agent to review whether the implementation remained consistent with the architecture and
    domain decisions. When an implementation started to diverge from the agreed design, I corrected it rather than
    allowing the code to define the architecture implicitly.
 5. Production considerations: I also challenged recommendations that could introduce unnecessary complexity. For
@@ -559,7 +560,7 @@ the requirements, architecture, and expected production behavior.
 
 ### Verification was part of the development process
 
-I used AI to speed up implementation, but I relied on actual evidence to decide whether something worked.
+I used the AI agent to speed up implementation, but I relied on actual evidence to decide whether something worked.
 
 The main checks were:
 
@@ -579,9 +580,9 @@ tests automatically on pull requests so that the same checks are repeated after 
 I also kept the documentation under the same review process as the code. When an implementation decision changed, I
 updated architecture.md, TASKS.md, and the README rather than leaving earlier assumptions behind.
 
-### What AI contributed
+### What the AI contributed
 
-AI was particularly useful for:
+The AI was particularly useful for:
 
 - Exploring architectural alternatives.
 - Challenging my initial assumptions.
@@ -597,8 +598,3 @@ But the final decisions were mine.
 
 I treated Claude more like another engineer I could discuss a design with: useful for proposing ideas, asking questions,
 and pointing out things I might have missed, but not someone whose answer I automatically accept.
-
-That distinction was important throughout the project. The goal wasn't to demonstrate that AI could build the
-application by itself. The goal was to use AI to work faster while still understanding, reviewing, testing, and taking
-responsibility for the result. TASKS.md` instead of deciding quietly, so I could see the call being made and push back
-if I disagreed with it.
