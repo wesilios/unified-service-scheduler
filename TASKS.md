@@ -233,7 +233,8 @@ this platform's own internal services, not local Scheduler data) without the mul
 **Lesson for next time**: verify `isolation: "worktree"` actually branches off the intended current branch before trusting parallel-agent output — don't assume it matches whatever's checked out in the main worktree.
 
 **Checkpoint / output — 5.12/5.13, and the same base-branch issue recurring 2/2 times more**: wrote up the lesson above
-as `.agent/skills/multi-agent-collaboration.md` (203 lines), then dispatched two more worktree agents for 5.12
+as `.agent/skills/multi-agent-collaboration/SKILL.md` (203 lines; later restructured into `<skill-name>/SKILL.md`
+directories alongside `ddd-cleanA-SOLID.md` → `ddd-cleanarchitecture-solid/SKILL.md`), then dispatched two more worktree agents for 5.12
 (Postman) and 5.13 (README), each explicitly instructed to verify its own base per the new skill before doing
 anything. Both correctly detected the same stale-`master` base and stopped immediately with no changes — 4/4 spawned
 worktree agents this session landed on `master` rather than the working branch. That's a systematic behavior of

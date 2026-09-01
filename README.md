@@ -508,11 +508,12 @@ and then move to the next piece.
 #### Starting with a clear brief
 
 Before writing code, I created Agent.md to define how I wanted the AI agent to work with me. It later moved to
-`.agent/agent.md`, alongside a small `.agent/skills/` folder for topic-specific references I didn't want cluttering
-the main brief: `ddd-cleanA-SOLID.md` (Domain-Driven Design / Clean Architecture / SOLID guidance — I used this to
-ground a later refactor's Repository-vs-Provider naming split and the decision to make Customer a Value Object instead
-of an entity) and `multi-agent-collaboration.md` (written after a real incident with running agents in parallel — more
-on that below). One brief plus focused skills reads better than one file growing indefinitely.
+`.agent/agent.md`, alongside a `.agent/skills/` folder for topic-specific references I didn't want cluttering the main
+brief — one directory per skill, each holding a `SKILL.md`: `ddd-cleanarchitecture-solid/SKILL.md` (Domain-Driven
+Design / Clean Architecture / SOLID guidance — I used this to ground a later refactor's Repository-vs-Provider naming
+split and the decision to make Customer a Value Object instead of an entity) and
+`multi-agent-collaboration/SKILL.md` (written after a real incident with running agents in parallel — more on that
+below). One brief plus focused skills reads better than one file growing indefinitely.
 
 I gave the agent the role of a Senior Solution Architect / Software Engineer and described the domain assumptions,
 engineering priorities, and constraints of the assessment. I also ranked the priorities so there was less room for
@@ -599,7 +600,7 @@ passing tests — but before merging anything, checking each worktree's actual b
 started from an old branch, six commits behind, missing an entire already-shipped feature. One subagent's work was
 unaffected by the gap; the other had quietly written test assertions that worked around the missing feature instead of
 failing on it — code that was internally consistent but wrong relative to the real target. The lesson (now written up
-in `.agent/skills/multi-agent-collaboration.md` so it doesn't get re-learned the hard way next time): a subagent
+in `.agent/skills/multi-agent-collaboration/SKILL.md` so it doesn't get re-learned the hard way next time): a subagent
 reporting "build and tests pass" only proves it's consistent with whatever it actually started from, not that the
 starting point was correct. Caught before it caused damage, by checking the input, not by a test that happened to
 fail.
