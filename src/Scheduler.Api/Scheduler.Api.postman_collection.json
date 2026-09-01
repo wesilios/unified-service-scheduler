@@ -323,7 +323,7 @@
                 }
               }
             },
-            "description": "Same Email+Phone as the first booking, different slot - should reuse the existing Customer record rather than create a duplicate (data.customerId matches). No X-Correlation-Id header is sent here, so the middleware mints a fresh one - check the response headers for it."
+            "description": "Same Name/Email/Phone as the first booking, different slot - Customer is a Value Object embedded directly on each Appointment (not a shared record), so this succeeds as an independent booking carrying the same customer details (data.customer.email/phone match the first request), not a lookup-and-reuse of any existing record. No X-Correlation-Id header is sent here, so the middleware mints a fresh one - check the response headers for it."
           },
           "event": [
             {
@@ -333,6 +333,12 @@
                 "exec": [
                   "pm.test(\"Status code is 201\", function () {",
                   "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"data.customer carries the same embedded Name/Email/Phone as the request body\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.customer.name).to.eql(\"Juan Dela Cruz\");",
+                  "    pm.expect(body.data.customer.email).to.eql(\"juan@example.com\");",
+                  "    pm.expect(body.data.customer.phone).to.eql(\"+639171234567\");",
                   "});"
                 ]
               }

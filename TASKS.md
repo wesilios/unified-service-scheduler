@@ -200,7 +200,7 @@ Documentation: added `## 14. API Response Contract` to architecture.md (envelope
 
 ## Task 5 — Bounded-context refactor: Dealership as an internal service, Customer as a Value Object
 
-Status: **IN PROGRESS** — `architecture.md` (design) updated and reviewed; code/tests/Postman/README not yet touched
+Status: **DONE** — design, code/tests, Postman, and README all landed on `feature/bounded-context-refactor`; not yet merged to `master`/pushed
 
 Context: originally reasoned through as a "multi-tenant SaaS" framing (Dealership as tenant, a Provider Portal for
 dealership staff), then simplified per user direction — keep the *outcome* (Dealership/Technician/Service Bay are
@@ -217,12 +217,35 @@ this platform's own internal services, not local Scheduler data) without the mul
 | 5.7 | C4 L1/L2: Dealership/Technician/Service Bay reframed as **internal** services (same platform, different bounded context) inside an `Enterprise_Boundary`; Notification stays the one genuinely **external**, third-party service (e.g. SendGrid for email) | DONE (doc) | Was previously "external systems" for all four, which conflated "another bounded context we own" with "an actual third party" |
 | 5.8 | API Gateway added to C4 L2 (documented, not implemented) | DONE (doc) | Sits on the `Scheduler API` → internal-services leg specifically (Dealership/Technician/Service Bay), not between the frontend and `Scheduler API` — that edge stays a direct call, unchanged. One gateway hop replacing three separate direct integrations once those services are real; also the natural home for the correlation-id-assigning edge component already discussed in Observability §10. Ties into the existing (renamed) "No API Gateway deployed" scope note rather than inventing new content |
 | 5.9 | L3/L4 diagrams updated to match 5.1–5.6 | DONE | Also fixed a pre-existing drift in L4a: the old diagram showed `CustomerId` on `CreateAppointmentCommand` and Technician/ServiceBay deps directly on the Handler, but the actual code already had `CustomerName`/`CustomerEmail`/`CustomerPhone` and those deps live in `AppointmentAvailabilityChecker` — corrected while redrawing, not just re-skinned |
-| 5.10 | Code: `Scheduler.Domain`/`Scheduler.Application`/`Scheduler.Infrastructure` changes to match the doc (interface moves/renames, `MockDealershipProvider`, `Customer` VO via `OwnsOne`, EF migration dropping `Dealerships`) | TODO | Not started |
-| 5.11 | Update unit/integration tests for the new shapes | TODO | Mechanical rename for most (Moq setups on renamed interfaces); real rewrites for anything that asserted on `CustomerId`/shared identity or `IDealershipRepository` |
-| 5.12 | Update `Scheduler.Api.postman_collection.json` | TODO | Response bodies change shape (`customer: {...}` instead of `customerId`); no new endpoints needed (dealership lookup isn't proxied through this API per user direction) |
-| 5.13 | Update `README.md` | TODO | Seeded-dealership section, any `customerId` references, and the AI Collaboration Narrative section — the user moved `Agent.md` to `.agent/agent.md` and added `.agent/skills/ddd-cleanA-SOLID.md` (a DDD/Clean Architecture/SOLID skill reference used to ground this refactor's Repository-vs-Provider and Value-Object reasoning); the narrative should describe this change in workflow, not just the old single-`Agent.md` setup |
+| 5.10 | Code: `Scheduler.Domain`/`Scheduler.Application`/`Scheduler.Infrastructure` changes to match the doc (interface moves/renames, `MockDealershipProvider`, `Customer` VO via `OwnsOne`, EF migration dropping `Dealerships`) | DONE | Built via two parallel subagents, each in its own git worktree (Dealership/Provider workstream + Customer VO workstream), merged back together — see Checkpoint below for how |
+| 5.11 | Update unit/integration tests for the new shapes | DONE | Done by the same two agents as part of 5.10, plus my own fix-up of the repeat-customer integration test during merge reconciliation (see Checkpoint) |
+| 5.12 | Update `Scheduler.Api.postman_collection.json` | DONE | Done directly (not via a worktree agent — see below). Only one `customerId` reference existed, in a request description (no `pm.test` scripts checked it programmatically); updated the description and added a real assertion checking `data.customer.name/email/phone` on the repeat-customer request. Verified against a live `dotnet run` instance via curl before committing — response shape matches exactly (`data.customer: {name, email, phone}`) |
+| 5.13 | Update `README.md` | DONE | Done directly (not via a worktree agent — see below). Seeded-dealership section rewritten (`MockDealershipProvider`, not a migration seed); unit/integration test tables regenerated from `dotnet test --list-tests` (66/14, was 64/13); stale `CreateAppointment_SameCustomerTwice_ReusesCustomerId` row fixed; `Agent.md` → `.agent/agent.md` references fixed; Database Migrations section notes the dropped tables; AI Collaboration Narrative rewritten for the `.agent/agent.md` + `.agent/skills/` structure and a new concrete example (the base-branch incident below) |
 
-**Checkpoint / output:** `architecture.md` diff is ~415 insertions/~305 deletions across §1–§14 (every section that referenced the old Dealership/Customer/Provider shapes). Full read-through done section by section, mermaid fence count verified balanced (20, even) after each pass. No code, test, Postman, or README changes yet — those are 5.10–5.13, deliberately sequenced after doc review per user's explicit "update L3/L4 before we refactor completely" instruction.
+**Checkpoint / output — design:** `architecture.md` diff is ~415 insertions/~305 deletions across §1–§14 (every section that referenced the old Dealership/Customer/Provider shapes). Full read-through done section by section, mermaid fence count verified balanced (20, even) after each pass.
+
+**Checkpoint / output — code (5.10/5.11), and a real mistake found mid-way:** implemented via two `Agent(subagent_type: "fork", isolation: "worktree")` calls launched in parallel — each inherits this session's full design context but works in its own isolated git worktree, so the two workstreams (Dealership/Provider vs. Customer VO) could proceed simultaneously without touching each other's files. Both were explicitly told not to run `dotnet ef migrations add` (two independent migrations from the same stale model snapshot would conflict on `SchedulerDbContextModelSnapshot.cs`) and not to edit TASKS.md.
+
+**Mistake caught before merging**: both worktrees turned out to be based on `master`, not the actual working branch `feat/api-response-contract` — missing 6 commits including the entire `ApiResponse` envelope feature (`data`/`statusCode`/`message`/`errors` wrapping). The Dealership/Provider agent's work was unaffected (doesn't touch the response layer). The Customer VO agent noticed the envelope was missing and adapted its integration-test assertions around a bare (non-enveloped) response — which would have been wrong once merged against the real branch. Caught by diffing branch ancestry (`git merge-base --is-ancestor`, `git log master..feat/api-response-contract`) before merging anything, not discovered later via a failing test.
+
+**Reconciliation**: created `feature/bounded-context-refactor` off the real `feat/api-response-contract`, merged the Dealership/Provider branch cleanly (one trivial auto-merge conflict in `ci.yml`), then merged the Customer VO branch — 3 real conflicts, all in files both workstreams were told they'd share (`SchedulerDbContext.cs`, `ServiceCollectionExtensions.cs` — each a two-line "which stale registration/DbSet line to delete" resolution; `AppointmentBookingTests.cs` — combined the real branch's `ApiEnvelope<T>`-aware test scaffolding with the agent's new Value-Object-aware assertions and renamed test). Generated one migration afterward (`DropDealershipAndEmbedCustomer`): drops `Dealerships`/`Customers` tables, drops `Appointments.CustomerId`, adds `CustomerName`/`CustomerEmail`/`CustomerPhone` columns. Full solution build clean; 66 unit tests + 14 integration tests passing. Worktrees and their branches deleted after merging.
+
+**Lesson for next time**: verify `isolation: "worktree"` actually branches off the intended current branch before trusting parallel-agent output — don't assume it matches whatever's checked out in the main worktree.
+
+**Checkpoint / output — 5.12/5.13, and the same base-branch issue recurring 2/2 times more**: wrote up the lesson above
+as `.agent/skills/multi-agent-collaboration.md` (203 lines), then dispatched two more worktree agents for 5.12
+(Postman) and 5.13 (README), each explicitly instructed to verify its own base per the new skill before doing
+anything. Both correctly detected the same stale-`master` base and stopped immediately with no changes — 4/4 spawned
+worktree agents this session landed on `master` rather than the working branch. That's a systematic behavior of
+`isolation: "worktree"` in this environment, not a one-off. Did 5.12 and 5.13 directly instead (no subagent): fixed
+the one `customerId` reference in the Postman collection (a request description; no `pm.test` script checked it
+programmatically) and added a real assertion on the embedded `data.customer` shape, verified against a live
+`dotnet run` instance via curl before committing. Then updated README: seeded-dealership wording, regenerated the
+unit/integration test-count tables from `dotnet test --list-tests` (don't eyeball counts — this project has been
+burned by that before, see Task 4's history), fixed the stale repeat-customer test name/description, `Agent.md` path
+references, and rewrote the AI Collaboration Narrative for the `.agent/` restructure plus a concrete write-up of the
+base-branch incident as a verification example. Full solution rebuilt and retested after both (80/80 passing) before
+committing either.
 
 ## Open Decisions Needing User Input
 

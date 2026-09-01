@@ -26,7 +26,7 @@ const REQUEST_COUNT = Number(process.env.REQUEST_COUNT ?? 20);
 // "Next business day, clamped into 08:00-16:00 operating hours, skip Sunday" — a fixed,
 // always-valid time rather than a literal date that eventually lands in the past.
 // Deliberately dealership-local wall-clock time, not UTC: operating hours are a local-time
-// concept (see AppointmentSchedulingPolicy in the Domain layer).
+// concept (see Dealership.IsWithinOperatingHours in the Domain layer).
 function businessDayIn(offsetDays) {
   const pad = (n) => String(n).padStart(2, "0");
   const now = new Date();

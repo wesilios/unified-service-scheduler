@@ -77,9 +77,11 @@ dotnet run --project src/Scheduler.Api
 ```
 
 By default this listens on `http://localhost:5207` and `https://localhost:7048` (see
-`src/Scheduler.Api/Properties/launchSettings.json`). The first time it runs, it applies the EF Core `InitialCreate`
-migration automatically — creating `scheduler.db` next to the running executable — and seeds one dealership so there's
-something to book against:
+`src/Scheduler.Api/Properties/launchSettings.json`). The first time it runs, it applies EF Core migrations
+automatically — creating `scheduler.db` next to the running executable, holding just `Appointment`/`AppointmentSlot`
+(see architecture.md §6 Data Model). Dealership is no longer a table this app seeds; it's this platform's own internal
+service, and `MockDealershipProvider` (`Scheduler.Infrastructure/ExternalServices/`) returns a known dealership so
+there's something to book against without a real Dealership Service deployed yet:
 
 | Field           | Value                                  |
 | --------------- | -------------------------------------- |
@@ -150,13 +152,18 @@ dotnet ef migrations add <MigrationName> \
 Leave off `--output-dir` and you'll get a brand new top-level `Migrations/` folder sitting next to the correct one —
 `dotnet ef` doesn't infer the location from existing migrations.
 
+The schema holds only `Appointment`/`AppointmentSlot` today — an earlier revision also had `Dealerships` and
+`Customers` tables; the `DropDealershipAndEmbedCustomer` migration removed both once Dealership became this
+platform's own internal service and Customer became a Value Object owned directly by `Appointment` (see
+architecture.md §3 Domain Assumptions and §6 Data Model).
+
 ### Testing
 
 ```bash
 dotnet test UnifiedSeviceScheduler.sln
 ```
 
-78 tests: 64 unit tests (`tests/Scheduler.UnitTests`) covering Domain, Application, and Infrastructure in isolation with
+80 tests: 66 unit tests (`tests/Scheduler.UnitTests`) covering Domain, Application, and Infrastructure in isolation with
 Moq, and 14 integration tests (`tests/Scheduler.IntegrationTests`) exercising the real HTTP pipeline against an isolated
 temp SQLite database per test class, via `WebApplicationFactory`. If you're reviewing this project and want the fastest
 path to confidence in it, read the subsections below in order:
@@ -168,18 +175,19 @@ Unit Tests → Integration Tests → [Manual API testing](#manual-api-testing).
 dotnet test tests/Scheduler.UnitTests
 ```
 
-| Test class                                                  | Tests | Covers                                                                                                                             |
-| ----------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `AppointmentSchedulingPolicyTests`                          | 10    | Domain policy: operating-hours boundaries (exactly-at-open/close, before/after), Sunday closure, cross-midnight, overlap detection |
-| `CreateAppointmentCommandValidatorTests`                    | 10    | FluentValidation rules for the booking request (every required-field/empty/past-time branch)                                       |
-| `TimeRangeTests`                                            | 8     | Domain value object: construction validation, `Overlaps` incl. adjacency edge cases, equality                                      |
-| `CreateAppointmentCommandHandlerTests`                      | 8     | Every handler failure branch, insert-conflict → 409, notification/cache calls verified via `Moq.Verify`                            |
-| `AppointmentTests`                                          | 7     | Aggregate `Create` validation, slot-count generation for 30/45/60-min durations                                                    |
-| `AppointmentAvailabilityCheckerTests`                       | 7     | Every `AvailabilityStatus` branch (available, unavailable, invalid resource, outside hours, unknown service type)                  |
-| `CheckAvailabilityQueryValidatorTests`                      | 5     | FluentValidation rules for the availability query                                                                                  |
-| `JsonServiceTypeProviderTests`                              | 3     | JSON-backed service type catalog (known/unknown code, get-all)                                                                     |
-| `MockTechnicianServiceTests` / `MockServiceBayServiceTests` | 4     | Mocked external-system existence checks                                                                                            |
-| `CheckAvailabilityQueryHandlerTests`                        | 2     | Query handler happy path + unknown-service-type failure                                                                            |
+| Test class                                                                                 | Tests | Covers                                                                                                                     |
+| ------------------------------------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- |
+| `CreateAppointmentCommandValidatorTests`                                                     | 10    | FluentValidation rules for the booking request (every required-field/empty/past-time branch)                               |
+| `TimeRangeTests`                                                                             | 8     | Domain value object: construction validation, `Overlaps` incl. adjacency edge cases, equality                               |
+| `AppointmentTests`                                                                           | 8     | Aggregate `Create` validation, embedded `Customer` Value Object, slot-count generation for 30/45/60-min durations           |
+| `DealershipTests`                                                                            | 7     | `Dealership.IsWithinOperatingHours` boundaries (exactly-at-open/close, before/after), Sunday closure, cross-midnight — moved off `AppointmentSchedulingPolicy` onto `Dealership` itself |
+| `CreateAppointmentCommandHandlerTests`                                                       | 7     | Every handler failure branch, insert-conflict → 409, notification/cache calls verified via `Moq.Verify`                    |
+| `AppointmentAvailabilityCheckerTests`                                                        | 7     | Every `AvailabilityStatus` branch (available, unavailable, invalid resource, outside hours, unknown service type)          |
+| `CheckAvailabilityQueryValidatorTests`                                                       | 5     | FluentValidation rules for the availability query                                                                          |
+| `JsonServiceTypeProviderTests`                                                               | 3     | JSON-backed service type catalog (known/unknown code, get-all)                                                             |
+| `AppointmentSchedulingPolicyTests`                                                           | 3     | Domain policy: the no-overlap invariant only — operating-hours moved to `DealershipTests` above                            |
+| `MockTechnicianProviderTests` / `MockServiceBayProviderTests` / `MockDealershipProviderTests` | 6     | Mocked internal-service existence/lookup checks (Technician/Service Bay existence; Dealership known-id vs. unknown-id)      |
+| `CheckAvailabilityQueryHandlerTests`                                                         | 2     | Query handler happy path + unknown-service-type failure                                                                    |
 
 **Coverage**: collection is wired up via `coverlet.collector` (`--collect:"XPlat Code
 Coverage"`) and runs on every CI build (see [GitHub Actions](#github-actions)). To turn the raw Cobertura XML into a
@@ -227,7 +235,7 @@ dotnet test tests/Scheduler.IntegrationTests
 | `CreateAppointment_InvalidTechnician_Returns400`                       | Unknown/invalid technician rejected                                                                                                                                                                         |
 | `CreateAppointment_EmptyVehicleField_Returns400`                       | Required-field validation enforced end-to-end, not just at the unit level                                                                                                                                   |
 | `CreateAppointment_MultipleValidationFailures_ReturnsOneErrorPerField` | The `ApiResponse` envelope's `errors` array carries every failure at once — a request invalid on two independent fields comes back with two entries, not just the first one found                           |
-| `CreateAppointment_SameCustomerTwice_ReusesCustomerId`                 | Guest checkout dedupes by Email+Phone instead of creating a duplicate `Customer`                                                                                                                            |
+| `CreateAppointment_SameCustomerTwice_BothSucceedWithIndependentEmbeddedCustomer` | `Customer` is a Value Object owned by `Appointment`, not a shared entity — two bookings from the same person succeed as two independent rows carrying matching embedded Name/Email/Phone, not a lookup-and-reuse of one record |
 | `CheckAvailability_BookedSlot_ReturnsUnavailable`                      | Availability query reflects a real booking                                                                                                                                                                  |
 | `CheckAvailability_FreeSlot_ReturnsAvailable`                          | Availability query on an open slot                                                                                                                                                                          |
 | `HealthCheck_ReturnsHealthy`                                           | `/health` liveness                                                                                                                                                                                          |
@@ -372,8 +380,8 @@ by hand — use **Azure Key Vault** instead, so the actual value never has to ex
   `az login`), never the application's own connection string. If a DB connection string ever ends up in a GitHub Actions
   secret, that's the exact thing this setup is meant to avoid.
 
-See architecture.md §9 (Security) for the full write-up. This is documented as a recommendation per Agent.md's scope,
-not implemented here — there's no real Azure environment to point it at in this assessment.
+See architecture.md §9 (Security) for the full write-up. This is documented as a recommendation per `.agent/agent.md`'s
+scope, not implemented here — there's no real Azure environment to point it at in this assessment.
 
 ### As build artifacts
 
@@ -499,11 +507,16 @@ and then move to the next piece.
 
 #### Starting with a clear brief
 
-Before writing code, I created Agent.md to define how I wanted the AI agent to work with me.
+Before writing code, I created Agent.md to define how I wanted the AI agent to work with me. It later moved to
+`.agent/agent.md`, alongside a small `.agent/skills/` folder for topic-specific references I didn't want cluttering
+the main brief: `ddd-cleanA-SOLID.md` (Domain-Driven Design / Clean Architecture / SOLID guidance — I used this to
+ground a later refactor's Repository-vs-Provider naming split and the decision to make Customer a Value Object instead
+of an entity) and `multi-agent-collaboration.md` (written after a real incident with running agents in parallel — more
+on that below). One brief plus focused skills reads better than one file growing indefinitely.
 
-I gave it the role of a Senior Solution Architect / Software Engineer and described the domain assumptions, engineering
-priorities, and constraints of the assessment. I also ranked the priorities so there was less room for ambiguity when
-making trade-offs:
+I gave the agent the role of a Senior Solution Architect / Software Engineer and described the domain assumptions,
+engineering priorities, and constraints of the assessment. I also ranked the priorities so there was less room for
+ambiguity when making trade-offs:
 
 1. Correctness
 2. Domain clarity
@@ -574,11 +587,22 @@ The main checks were:
 - Persistent data survives container restart.
 - Documentation reflects the current implementation.
 
-The final test suite contains 78 tests: 64 unit tests and 14 integration tests. The CI pipeline also runs the build and
+The test suite currently contains 80 tests: 66 unit tests and 14 integration tests. The CI pipeline also runs the build and
 tests automatically on pull requests so that the same checks are repeated after the assessment work is committed.
 
 I also kept the documentation under the same review process as the code. When an implementation decision changed, I
 updated architecture.md, TASKS.md, and the README rather than leaving earlier assumptions behind.
+
+**A concrete example of why verification mattered, not just a principle**: for one larger refactor I had Claude run two
+subagents in parallel, each in its own isolated git worktree, to save time. Both subagents reported green builds and
+passing tests — but before merging anything, checking each worktree's actual branch ancestry showed both had silently
+started from an old branch, six commits behind, missing an entire already-shipped feature. One subagent's work was
+unaffected by the gap; the other had quietly written test assertions that worked around the missing feature instead of
+failing on it — code that was internally consistent but wrong relative to the real target. The lesson (now written up
+in `.agent/skills/multi-agent-collaboration.md` so it doesn't get re-learned the hard way next time): a subagent
+reporting "build and tests pass" only proves it's consistent with whatever it actually started from, not that the
+starting point was correct. Caught before it caused damage, by checking the input, not by a test that happened to
+fail.
 
 ### What the AI contributed
 
