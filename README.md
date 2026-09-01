@@ -519,11 +519,7 @@ brief — one directory per skill, each holding a `SKILL.md`:
   entity.
 - `multi-agent-collaboration/SKILL.md` — written after a real incident with running agents in parallel (more on that
   below).
-- `clean-code/SKILL.md` — naming and function-clarity guidelines, written after asking the agent to review the
-  codebase for misleading names; it found two real ones (a DI-registration method promising HTTP-only behavior that
-  actually fell back to an in-memory mock half the time, and config-string variables named as if they held service
-  instances) and fixed both, plus a generic `sut` in every test file renamed to what it actually holds
-  (`provider`/`handler`/`checker`).
+- `clean-code/SKILL.md` — naming and function-clarity guidelines.
 
 One brief plus focused skills reads better than one file growing indefinitely.
 
