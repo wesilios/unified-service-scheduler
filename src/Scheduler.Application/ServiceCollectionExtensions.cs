@@ -14,7 +14,7 @@ public static class ServiceCollectionExtensions
     public static void AddApplicationServices(this IServiceCollection services)
     {
         services.AddScoped<IDispatcher, Dispatcher>();
-        services.AddScoped<AppointmentAvailabilityChecker>();
+        services.AddScoped<IAppointmentAvailabilityChecker, AppointmentAvailabilityChecker>();
         services.AddScoped<ICommandHandler<CreateAppointmentCommand>, CreateAppointmentCommandHandler>();
         services.AddScoped<IQueryHandler<CheckAvailabilityQuery, AvailabilityResult>, CheckAvailabilityQueryHandler>();
         services.AddValidatorsFromAssemblyContaining<CreateAppointmentCommandValidator>();

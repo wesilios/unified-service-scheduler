@@ -1,13 +1,13 @@
+using Scheduler.Application.Interfaces;
 using Scheduler.Application.Queries;
-using Scheduler.Application.Services;
 
 namespace Scheduler.Application.Handlers;
 
 public sealed class CheckAvailabilityQueryHandler : IQueryHandler<CheckAvailabilityQuery, AvailabilityResult>
 {
-    private readonly AppointmentAvailabilityChecker _checker;
+    private readonly IAppointmentAvailabilityChecker _checker;
 
-    public CheckAvailabilityQueryHandler(AppointmentAvailabilityChecker checker)
+    public CheckAvailabilityQueryHandler(IAppointmentAvailabilityChecker checker)
     {
         _checker = checker;
     }

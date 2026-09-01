@@ -3,7 +3,6 @@ using Scheduler.Application.Interfaces;
 using Scheduler.Application.Observability;
 using Scheduler.Application.Queries;
 using Scheduler.Application.Results;
-using Scheduler.Application.Services;
 using Scheduler.Domain.Entities;
 using Scheduler.Domain.Exceptions;
 using Scheduler.Domain.Repositories;
@@ -12,13 +11,13 @@ namespace Scheduler.Application.Handlers;
 
 public sealed class CreateAppointmentCommandHandler : ICommandHandler<CreateAppointmentCommand>
 {
-    private readonly AppointmentAvailabilityChecker _availabilityChecker;
+    private readonly IAppointmentAvailabilityChecker _availabilityChecker;
     private readonly IAppointmentRepository _appointments;
     private readonly INotificationService _notificationService;
     private readonly IAvailabilityCache _availabilityCache;
 
     public CreateAppointmentCommandHandler(
-        AppointmentAvailabilityChecker availabilityChecker,
+        IAppointmentAvailabilityChecker availabilityChecker,
         IAppointmentRepository appointments,
         INotificationService notificationService,
         IAvailabilityCache availabilityCache)
