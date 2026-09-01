@@ -105,13 +105,17 @@ public class AppointmentBookingTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAppointment_SameCustomerTwice_ReusesCustomerId()
+    public async Task CreateAppointment_SameCustomerTwice_BothSucceedWithIndependentEmbeddedCustomer()
     {
+        // Customer is a Value Object owned by Appointment, not a shared entity — two bookings
+        // from the same person are two independent rows carrying matching Name/Email/Phone
+        // values, not one shared identity. See Domain Assumptions > Customer.
         var first = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 9, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         var firstAppointment = await first.Content.ReadFromJsonAsync<AppointmentResponse>(JsonOptions);
 
         var second = await _client.PostAsJsonAsync(
@@ -119,9 +123,14 @@ public class AppointmentBookingTests : IDisposable
             BookingRequest(
                 Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 13, 0, 0),
                 email: "repeat@example.com", phone: "+639170001111"));
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         var secondAppointment = await second.Content.ReadFromJsonAsync<AppointmentResponse>(JsonOptions);
 
-        Assert.Equal(firstAppointment!.CustomerId, secondAppointment!.CustomerId);
+        Assert.NotEqual(firstAppointment!.Id, secondAppointment!.Id);
+        Assert.Equal(firstAppointment.Customer.Email, secondAppointment.Customer.Email);
+        Assert.Equal(firstAppointment.Customer.Phone, secondAppointment.Customer.Phone);
+        Assert.Equal("Juan Dela Cruz", firstAppointment.Customer.Name);
+        Assert.Equal("Juan Dela Cruz", secondAppointment.Customer.Name);
     }
 
     [Fact]
@@ -227,4 +236,6 @@ public class AppointmentBookingTests : IDisposable
 
 // Test-owned DTO matching the API's wire format — deliberately not the domain Appointment
 // entity, which has private setters and can't be deserialized by System.Text.Json.
-internal sealed record AppointmentResponse(Guid Id, Guid CustomerId, List<JsonElement> Slots);
+internal sealed record AppointmentResponse(Guid Id, CustomerResponse Customer, List<JsonElement> Slots);
+
+internal sealed record CustomerResponse(string Name, string Email, string Phone);

@@ -5,7 +5,7 @@ namespace Scheduler.Domain.Entities;
 public class Appointment : IAggregateRoot
 {
     public Guid Id { get; private set; }
-    public Guid CustomerId { get; private set; }
+    public Customer Customer { get; private set; } = null!;
     public Guid DealershipId { get; private set; }
     public string Vehicle { get; private set; } = string.Empty;
     public string ServiceTypeCode { get; private set; } = string.Empty;
@@ -23,7 +23,9 @@ public class Appointment : IAggregateRoot
     }
 
     public static Appointment Create(
-        Guid customerId,
+        string customerName,
+        string customerEmail,
+        string customerPhone,
         Guid dealershipId,
         string vehicle,
         string serviceTypeCode,
@@ -44,7 +46,7 @@ public class Appointment : IAggregateRoot
         var appointment = new Appointment
         {
             Id = Guid.NewGuid(),
-            CustomerId = customerId,
+            Customer = new Customer(customerName, customerEmail, customerPhone),
             DealershipId = dealershipId,
             Vehicle = vehicle,
             ServiceTypeCode = serviceTypeCode,

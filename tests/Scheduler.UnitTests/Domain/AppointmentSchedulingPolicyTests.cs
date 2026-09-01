@@ -74,7 +74,8 @@ public class AppointmentSchedulingPolicyTests
     public void HasNoOverlap_NonOverlappingExisting_ReturnsTrue()
     {
         var existing = Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             Guid.NewGuid(), Guid.NewGuid(), new TimeRange(Monday(8, 0), Monday(9, 0)));
 
         var requested = new TimeRange(Monday(10, 0), Monday(11, 0));
@@ -86,7 +87,8 @@ public class AppointmentSchedulingPolicyTests
     public void HasNoOverlap_OverlappingExisting_ReturnsFalse()
     {
         var existing = Appointment.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
+            "Juan Dela Cruz", "juan@example.com", "+639171234567",
+            Guid.NewGuid(), "Toyota - Vios - Vios G 2019", "OIL_CHANGE",
             Guid.NewGuid(), Guid.NewGuid(), new TimeRange(Monday(9, 30), Monday(10, 30)));
 
         var requested = new TimeRange(Monday(10, 0), Monday(11, 0));

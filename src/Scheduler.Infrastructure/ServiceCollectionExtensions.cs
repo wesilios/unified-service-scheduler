@@ -28,7 +28,6 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IDealershipRepository, DealershipRepository>();
-        services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IAvailabilityCache, MemoryAvailabilityCache>();
 
         // Placeholders for this assessment — see architecture.md Domain Assumptions for
