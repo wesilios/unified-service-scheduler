@@ -4,6 +4,7 @@ using Scalar.AspNetCore;
 using Scheduler.Api.Extensions;
 using Scheduler.Api.Filters;
 using Scheduler.Api.Middleware;
+using Scheduler.Api.OpenApi;
 using Scheduler.Application;
 using Scheduler.Infrastructure;
 using Scheduler.Infrastructure.DataAccess;
@@ -31,7 +32,15 @@ try
     // standard ApiResponse envelope (Data/StatusCode/Message/Errors) — see its own comment
     // for why a global filter, not per-controller code, is where that logic lives.
     builder.Services.AddControllers(options => options.Filters.Add<ApiResponseWrapperFilter>());
-    builder.Services.AddOpenApi();
+    // CorrelationIdHeaderOperationTransformer documents the X-Correlation-Id header every
+    // endpoint honors (see CorrelationIdMiddlewareExtensions); AppointmentsExampleOperationTransformer
+    // attaches hand-written sample payloads to the Appointments endpoints — see both types'
+    // own comments for why neither is derivable from attributes alone.
+    builder.Services.AddOpenApi(options =>
+    {
+        options.AddOperationTransformer<CorrelationIdHeaderOperationTransformer>();
+        options.AddOperationTransformer<AppointmentsExampleOperationTransformer>();
+    });
     builder.Services.AddApplicationServices();
     builder.Services.AddInfrastructureServices(builder.Configuration);
     // ApiExceptionHandler builds the same ApiResponse envelope for unhandled exceptions —
