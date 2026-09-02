@@ -3,10 +3,7 @@
 ## Table of Contents
 
 - [1. Original Core Requirements](#1-original-core-requirements)
-- [2. Implementation Scope Notes](#2-implementation-scope-notes)
-  - [Service & API scope](#service--api-scope)
-  - [Infrastructure & deployment scope](#infrastructure--deployment-scope)
-- [3. Domain Clarifications & Assumptions](#3-domain-clarifications--assumptions)
+- [2. Domain Clarifications & Assumptions](#2-domain-clarifications--assumptions)
   - [Dealership](#dealership)
   - [Service Bay](#service-bay)
   - [Technician](#technician)
@@ -15,6 +12,9 @@
   - [Customer](#customer)
   - [Appointment](#appointment)
   - [Future Extensibility](#future-extensibility)
+- [3. Implementation Scope Notes](#3-implementation-scope-notes)
+  - [Service & API scope](#service--api-scope)
+  - [Infrastructure & deployment scope](#infrastructure--deployment-scope)
 - [4. Architecture Principles](#4-architecture-principles)
   - [Key Trade-offs](#key-trade-offs)
     - [Correctness vs. performance and cost](#correctness-vs-performance-and-cost)
@@ -73,99 +73,11 @@
 3. Confirmed Appointment Record: Upon success, create a persistent Appointment record associating the customer, vehicle,
    technician, and service bay.
 
-## 2. Implementation Scope Notes
-
-This document describes a system designed for realistic production use, but only a slice of it is running today. That
-gap — mocked external systems, an unauthenticated API, SQLite instead of SQL Server, no gateway in
-front, no deployed observability backend — recurs throughout the sections below. Rather than re-explaining each one
-inline every time it's relevant, this section is the one canonical explanation; every other section links back here
-instead of repeating it.
-
-### Service & API scope
-
-#### Internal services and Notification are mocked
-
-Dealership, Technician, and Service Bay are modeled as this platform's own internal services, reached over HTTP in
-production (see [C4 L1](#c4-level-1---system-context) for the internal/external distinction). Notification is a
-genuine external, third-party dependency (e.g. SendGrid for email). All four are backed by a `Mock*` implementation
-returning static/deterministic data for now — see [Dealership](#dealership), [Service Bay](#service-bay), and
-[Technician](#technician) for the specific interfaces and the Refit-based real-client stubs left in place for the
-future swap.
-
-#### Service Type is a static file, not a service
-
-`IServiceTypeProvider` is backed by a JSON file loaded into an in-memory dictionary at startup —
-see [Service Type](#service-type) — not a call to a real service, network or otherwise.
-
-#### Provider Portal is documented, not implemented
-
-The system context includes a Dealership Staff/Manager actor and a Provider Portal surface (C4 L1/L2) — where a
-dealership would manage its own Technicians and Service Bays — but only the Customer Booking API has working
-endpoints. The Provider Portal exists in this document to keep the two-API-surface authorization design (see
-[Security](#9-security)) complete, not because it's built.
-
-#### No authentication or authorization implemented
-
-The Customer Booking API is open — no auth middleware is registered, no auth package is referenced in any
-`.csproj`. [Security](#9-security) documents a JWT/claims design as a forward-looking recommendation, not a built one.
-
-### Infrastructure & deployment scope
-
-#### SQLite instead of SQL Server
-
-SQLite is used here because it's file-based and needs no separate database service — a lighter environment to run
-locally than standing up SQL Server/Docker. SQL Server (Azure SQL Database in production) is the actual target; EF
-Core's provider abstraction makes the swap a connection-string change plus one `UseSqlServer(...)` call, with the schema
-and `AppointmentSlot` concurrency design unchanged (see [Data Model](#6-data-model)).
-
-#### No API Gateway deployed
-
-Now that Dealership/Technician/Service Bay are recognized as their own internal services rather than data this
-application owns (see [Domain Assumptions](#3-domain-clarifications--assumptions)), the target architecture names this
-component explicitly rather than leaving it a generic "gateway or load balancer": an **API Gateway** in front of every
-backend surface (Scheduler API, and eventually the Provider Portal), documented in C4 L1/L2. It's the one front door
-both the Customer Client and the future Provider Portal Client would call through, and it's a reasonable place to
-route Scheduler API's own outbound Dealership/Technician/Service Bay calls too, once those move off `Mock*` and become
-real deployed services — but that routing detail is optional and doesn't change today's implementation, since it's
-already abstracted behind the `I*Provider` interfaces (see Architecture Principle #8) regardless of how many hops sit
-between Scheduler API and the real service.
-
-This component also matters for correlation specifically, because it's the first hop a request makes: if it assigns
-(or forwards) a correlation id, every downstream service — including Scheduler API — can be tied back to the same
-originating request across service boundaries, not just within one process. That's the scenario
-`CorrelationIdMiddlewareExtensions` (see [Observability §10](#10-observability)) is built for: honor an inbound
-`X-Correlation-Id` if the caller (gateway or another upstream service) already set one, and only mint a new one if it
-didn't.
-
-**Not implemented today** — there is no gateway deployed in front of this API; every real request arrives directly
-from the client, without an `X-Correlation-Id` already attached. In practice that means the auto-generate branch, not
-the capture branch, is what actually fires here; the capture branch is demonstrated deliberately
-(`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to
-prove the behavior is correct for the topology it's designed for.
-
-#### No observability backend deployed
-
-The OpenTelemetry SDK/API layer is wired in — logs, metrics, and traces are all emitted — but no OTLP collector or APM
-backend is deployed yet; traces/metrics currently export to console only.
-See [Observability §10](#10-observability).
-
-#### No real Azure environment
-
-Key Vault and Managed Identity are documented recommendations (see [Security §9](#9-security), README's "Secrets and
-connection strings") for where secrets should live in production, not something deployed or verified against a real
-Azure subscription yet.
-
-#### Single-instance deployment
-
-The current design — one instance, `AppointmentSlot`'s unique constraint, `IMemoryCache` — is deliberately sufficient at
-the current scale. [Future Evolution §13](#13-future-evolution) treats horizontal scaling, distributed caching,
-and multi-region concerns as metrics-driven future work, not near-term requirements.
-
-## 3. Domain Clarifications & Assumptions
+## 2. Domain Clarifications & Assumptions
 
 The original requirements leave some dealership scheduling rules unspecified. To keep the implementation focused while
 maintaining a realistic domain model, the following assumptions are made. (Several of the assumptions below reference a
-standing scope limitation — see [Implementation Scope Notes](#2-implementation-scope-notes) for the canonical explanation of
+standing scope limitation — see [Implementation Scope Notes](#3-implementation-scope-notes) for the canonical explanation of
 each.)
 
 ### Dealership
@@ -307,6 +219,94 @@ Future constraints may include:
 - Buffer time between appointments.
 - Resilience around internal Dealership/Technician/Service Bay validation calls (caching validated IDs, circuit
   breaker, retry policy) to reduce the TOCTOU window between validation and booking.
+
+## 3. Implementation Scope Notes
+
+This document describes a system designed for realistic production use, but only a slice of it is running today. That
+gap — mocked external systems, an unauthenticated API, SQLite instead of SQL Server, no gateway in
+front, no deployed observability backend — recurs throughout the sections below. Rather than re-explaining each one
+inline every time it's relevant, this section is the one canonical explanation; every other section links back here
+instead of repeating it.
+
+### Service & API scope
+
+#### Internal services and Notification are mocked
+
+Dealership, Technician, and Service Bay are modeled as this platform's own internal services, reached over HTTP in
+production (see [C4 L1](#c4-level-1---system-context) for the internal/external distinction). Notification is a
+genuine external, third-party dependency (e.g. SendGrid for email). All four are backed by a `Mock*` implementation
+returning static/deterministic data for now — see [Dealership](#dealership), [Service Bay](#service-bay), and
+[Technician](#technician) for the specific interfaces and the Refit-based real-client stubs left in place for the
+future swap.
+
+#### Service Type is a static file, not a service
+
+`IServiceTypeProvider` is backed by a JSON file loaded into an in-memory dictionary at startup —
+see [Service Type](#service-type) — not a call to a real service, network or otherwise.
+
+#### Provider Portal is documented, not implemented
+
+The system context includes a Dealership Staff/Manager actor and a Provider Portal surface (C4 L1/L2) — where a
+dealership would manage its own Technicians and Service Bays — but only the Customer Booking API has working
+endpoints. The Provider Portal exists in this document to keep the two-API-surface authorization design (see
+[Security](#9-security)) complete, not because it's built.
+
+#### No authentication or authorization implemented
+
+The Customer Booking API is open — no auth middleware is registered, no auth package is referenced in any
+`.csproj`. [Security](#9-security) documents a JWT/claims design as a forward-looking recommendation, not a built one.
+
+### Infrastructure & deployment scope
+
+#### SQLite instead of SQL Server
+
+SQLite is used here because it's file-based and needs no separate database service — a lighter environment to run
+locally than standing up SQL Server/Docker. SQL Server (Azure SQL Database in production) is the actual target; EF
+Core's provider abstraction makes the swap a connection-string change plus one `UseSqlServer(...)` call, with the schema
+and `AppointmentSlot` concurrency design unchanged (see [Data Model](#6-data-model)).
+
+#### No API Gateway deployed
+
+Now that Dealership/Technician/Service Bay are recognized as their own internal services rather than data this
+application owns (see [Domain Assumptions](#2-domain-clarifications--assumptions)), the target architecture names this
+component explicitly rather than leaving it a generic "gateway or load balancer": an **API Gateway** in front of every
+backend surface (Scheduler API, and eventually the Provider Portal), documented in C4 L1/L2. It's the one front door
+both the Customer Client and the future Provider Portal Client would call through, and it's a reasonable place to
+route Scheduler API's own outbound Dealership/Technician/Service Bay calls too, once those move off `Mock*` and become
+real deployed services — but that routing detail is optional and doesn't change today's implementation, since it's
+already abstracted behind the `I*Provider` interfaces (see Architecture Principle #8) regardless of how many hops sit
+between Scheduler API and the real service.
+
+This component also matters for correlation specifically, because it's the first hop a request makes: if it assigns
+(or forwards) a correlation id, every downstream service — including Scheduler API — can be tied back to the same
+originating request across service boundaries, not just within one process. That's the scenario
+`CorrelationIdMiddlewareExtensions` (see [Observability §10](#10-observability)) is built for: honor an inbound
+`X-Correlation-Id` if the caller (gateway or another upstream service) already set one, and only mint a new one if it
+didn't.
+
+**Not implemented today** — there is no gateway deployed in front of this API; every real request arrives directly
+from the client, without an `X-Correlation-Id` already attached. In practice that means the auto-generate branch, not
+the capture branch, is what actually fires here; the capture branch is demonstrated deliberately
+(`Scheduler.Api.postman_collection.json`, and the integration test `Request_WithCorrelationIdHeader_EchoesItBack`) to
+prove the behavior is correct for the topology it's designed for.
+
+#### No observability backend deployed
+
+The OpenTelemetry SDK/API layer is wired in — logs, metrics, and traces are all emitted — but no OTLP collector or APM
+backend is deployed yet; traces/metrics currently export to console only.
+See [Observability §10](#10-observability).
+
+#### No real Azure environment
+
+Key Vault and Managed Identity are documented recommendations (see [Security §9](#9-security), README's "Secrets and
+connection strings") for where secrets should live in production, not something deployed or verified against a real
+Azure subscription yet.
+
+#### Single-instance deployment
+
+The current design — one instance, `AppointmentSlot`'s unique constraint, `IMemoryCache` — is deliberately sufficient at
+the current scale. [Future Evolution §13](#13-future-evolution) treats horizontal scaling, distributed caching,
+and multi-region concerns as metrics-driven future work, not near-term requirements.
 
 ## 4. Architecture Principles
 
