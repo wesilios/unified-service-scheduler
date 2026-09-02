@@ -437,13 +437,16 @@ on one persistent store — which now holds only `Appointment`/`AppointmentSlot`
 table — three internal services, and one external (third-party) service, all mocked
 ([Implementation Scope Notes](#internal-services-and-notification-are-mocked)).
 
-An **API Gateway** sits on the Scheduler API → internal-services leg — documented, not implemented
-([Implementation Scope Notes](#no-api-gateway-deployed)). Today, `Scheduler API` calls each `Mock*Provider`
-in-process, so this container doesn't exist yet in any deployable form; but once Dealership/Technician/Service Bay are
-real independently-deployed services, one gateway hop replaces three separate direct integrations — a single place to
-apply routing, auth, and retry/circuit-breaker policy for all three, rather than repeating that plumbing three times.
-This is a separate concern from the Customer/Provider Portal-facing edge — those clients still call `Scheduler API`
-directly, unchanged.
+An **API Gateway** fronts both edges of `Scheduler API` — documented, not implemented
+([Implementation Scope Notes](#no-api-gateway-deployed)). On the client-facing edge, the Customer Client and the
+future Provider Portal Client route through the gateway rather than calling `Scheduler API` directly — the one front
+door both clients call through, and the natural place to assign/forward the correlation id. On the outbound leg, the
+gateway is the single hop `Scheduler API` would call through to reach Dealership/Technician/Service Bay once those are
+real independently-deployed services — a single place to apply routing, auth, and retry/circuit-breaker policy for all
+three, rather than repeating that plumbing three times.
+
+Today, neither edge goes through it: `Scheduler API` calls each `Mock*Provider` in-process, and the Customer Client
+calls `Scheduler API` directly — this container doesn't exist yet in any deployable form.
 
 ```mermaid
 C4Container
@@ -456,10 +459,10 @@ C4Container
         Container(clientCustomer, "Customer Client", "Web / API Consumer")
         Container_Ext(clientStaff, "Provider Portal Client", "Web / API Consumer", "Not implemented yet")
         Container(api, "Scheduler API", "ASP.NET Core Web API, .NET", "Hosts the Customer Booking API (implemented) and a Provider Portal (documented placeholder, not implemented). Runs Application/Domain/Infrastructure in-process — see C4 L3. Reads Service Type metadata from a local JSON file. In-process IMemoryCache for availability reads.")
-        ContainerDb(db, "SQLite", "Database — current", "Source of truth: Appointment, AppointmentSlot only. SQL Server is the target for production; SQLite used here for a lightweight, Docker-free setup via EF Core's provider abstraction.")
+        ContainerDb(db, "SQL Server", "Database — target", "Source of truth: Appointment, AppointmentSlot only. SQLite is used today for a lightweight, Docker-free local setup via EF Core's provider abstraction; SQL Server (Azure SQL Database in production) is the target.")
     }
 
-    Container_Ext(gateway, "API Gateway", "Documented, not implemented", "Single hop Scheduler API would call through to reach the internal Dealership/Technician/Service Bay services once those are real, instead of three separate direct integrations. Also the correlation-id-assigning edge component once a frontend gateway exists.")
+    Container_Ext(gateway, "API Gateway", "Documented, not implemented", "Front door for Customer Client and Provider Portal Client, and the single hop Scheduler API would call through to reach the internal Dealership/Technician/Service Bay services once those are real, instead of three separate direct integrations. Also the correlation-id-assigning edge component.")
 
     ContainerDb_Ext(cache, "Redis", "Cache (future)", "Introduced when scale metrics require it — see Cache Strategy")
     Container_Ext(dealershipSvc, "Dealership Service", "Internal, mocked")
@@ -469,8 +472,9 @@ C4Container
 
     Rel(customer, clientCustomer, "Uses")
     Rel(staff, clientStaff, "Uses")
-    Rel(clientCustomer, api, "HTTPS/JSON")
-    Rel(clientStaff, api, "HTTPS/JSON — not implemented")
+    Rel(clientCustomer, gateway, "HTTPS/JSON — target; calls api directly today")
+    Rel(clientStaff, gateway, "HTTPS/JSON — not implemented")
+    Rel(gateway, api, "Routes to", "target; not implemented today")
     Rel(api, db, "Reads/writes", "SQL, EF Core")
     Rel(api, dealershipSvc, "Resolves Dealership", "Internal HTTP, mocked — today's actual path")
     Rel(api, technicianSvc, "Validates TechnicianId", "Internal HTTP, mocked — today's actual path")
