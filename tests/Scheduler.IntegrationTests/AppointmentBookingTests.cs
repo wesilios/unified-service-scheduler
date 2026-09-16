@@ -11,6 +11,19 @@ public class AppointmentBookingTests : IDisposable
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    // CreateAppointmentCommandValidator requires StartTime > DateTime.UtcNow, so tests need a
+    // date that's always in the future relative to whenever the suite runs. Anchoring to a
+    // hardcoded calendar date (e.g. "2026-09-07") rots the moment the clock passes it — this
+    // instead walks forward from today to the next Monday, which is also a weekday within the
+    // seeded dealership's Mon-Sat, 08:00-17:00 operating hours (see Dealership.cs).
+    private static readonly DateTime NextMonday = NextWeekday(DateTime.UtcNow.Date.AddDays(1), DayOfWeek.Monday);
+
+    private static DateTime NextWeekday(DateTime from, DayOfWeek dayOfWeek)
+    {
+        var daysToAdd = ((int)dayOfWeek - (int)from.DayOfWeek + 7) % 7;
+        return from.AddDays(daysToAdd);
+    }
+
     private readonly SchedulerApiFactory _factory = new();
     private readonly HttpClient _client;
 
@@ -43,7 +56,7 @@ public class AppointmentBookingTests : IDisposable
     public async Task CreateAppointment_ValidRequest_Returns201WithSlots()
     {
         var response = await _client.PostAsJsonAsync(
-            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 10, 0, 0)));
+            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddHours(10)));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
@@ -60,7 +73,7 @@ public class AppointmentBookingTests : IDisposable
     {
         var technicianId = Guid.NewGuid();
         var serviceBayId = Guid.NewGuid();
-        var startTime = new DateTime(2026, 9, 7, 11, 0, 0);
+        var startTime = NextMonday.AddHours(11);
 
         var first = await _client.PostAsJsonAsync("/appointments", BookingRequest(technicianId, serviceBayId, startTime));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
@@ -73,7 +86,7 @@ public class AppointmentBookingTests : IDisposable
     public async Task CreateAppointment_OutsideOperatingHours_Returns400()
     {
         var response = await _client.PostAsJsonAsync(
-            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 7, 0, 0)));
+            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddHours(7)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -90,9 +103,9 @@ public class AppointmentBookingTests : IDisposable
     [Fact]
     public async Task CreateAppointment_Sunday_Returns400()
     {
-        // 2026-09-06 is a Sunday.
+        // The day before NextMonday is always a Sunday.
         var response = await _client.PostAsJsonAsync(
-            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 6, 10, 0, 0)));
+            "/appointments", BookingRequest(Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddDays(-1).AddHours(10)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -101,7 +114,7 @@ public class AppointmentBookingTests : IDisposable
     public async Task CreateAppointment_InvalidTechnician_Returns400()
     {
         var response = await _client.PostAsJsonAsync(
-            "/appointments", BookingRequest(Guid.Empty, Guid.NewGuid(), new DateTime(2026, 9, 7, 10, 0, 0)));
+            "/appointments", BookingRequest(Guid.Empty, Guid.NewGuid(), NextMonday.AddHours(10)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -111,7 +124,7 @@ public class AppointmentBookingTests : IDisposable
     {
         var response = await _client.PostAsJsonAsync(
             "/appointments",
-            BookingRequest(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 10, 0, 0), vehicle: ""));
+            BookingRequest(Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddHours(10), vehicle: ""));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -133,7 +146,7 @@ public class AppointmentBookingTests : IDisposable
             dealershipId = DealershipId,
             technicianId = Guid.NewGuid(),
             serviceBayId = Guid.NewGuid(),
-            startTime = new DateTime(2026, 9, 7, 10, 0, 0)
+            startTime = NextMonday.AddHours(10)
         };
 
         var response = await _client.PostAsJsonAsync("/appointments", request);
@@ -155,7 +168,7 @@ public class AppointmentBookingTests : IDisposable
         var first = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
-                Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 9, 0, 0),
+                Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddHours(9),
                 email: "repeat@example.com", phone: "+639170001111"));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         var firstEnvelope = await first.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
@@ -163,7 +176,7 @@ public class AppointmentBookingTests : IDisposable
         var second = await _client.PostAsJsonAsync(
             "/appointments",
             BookingRequest(
-                Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 9, 7, 13, 0, 0),
+                Guid.NewGuid(), Guid.NewGuid(), NextMonday.AddHours(13),
                 email: "repeat@example.com", phone: "+639170001111"));
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         var secondEnvelope = await second.Content.ReadFromJsonAsync<ApiEnvelope<AppointmentResponse>>(JsonOptions);
@@ -180,7 +193,7 @@ public class AppointmentBookingTests : IDisposable
     {
         var technicianId = Guid.NewGuid();
         var serviceBayId = Guid.NewGuid();
-        var startTime = new DateTime(2026, 9, 7, 14, 0, 0);
+        var startTime = NextMonday.AddHours(14);
 
         const int concurrentRequests = 8;
         var tasks = Enumerable.Range(0, concurrentRequests)
@@ -205,7 +218,7 @@ public class AppointmentBookingTests : IDisposable
     {
         var technicianId = Guid.NewGuid();
         var serviceBayId = Guid.NewGuid();
-        var startTime = new DateTime(2026, 9, 7, 15, 0, 0);
+        var startTime = NextMonday.AddHours(15);
 
         await _client.PostAsJsonAsync("/appointments", BookingRequest(technicianId, serviceBayId, startTime));
 
@@ -223,7 +236,7 @@ public class AppointmentBookingTests : IDisposable
     {
         var response = await _client.GetAsync(
             $"/appointments/availability?dealershipId={DealershipId}&technicianId={Guid.NewGuid()}" +
-            $"&serviceBayId={Guid.NewGuid()}&serviceTypeCode=OIL_CHANGE&startTime={new DateTime(2026, 9, 7, 16, 0, 0):o}");
+            $"&serviceBayId={Guid.NewGuid()}&serviceTypeCode=OIL_CHANGE&startTime={NextMonday.AddHours(16):o}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
