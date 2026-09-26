@@ -18,7 +18,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Refit" Version="15.2.0" />
+        <PackageReference Include="Refit" Version="16.2.0" />
         <PackageReference Include="Refit.HttpClientFactory" Version="15.2.0" />
         <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.12" />
     </ItemGroup>
