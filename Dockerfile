@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Build stage ---------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Copy project files first so `restore` is cached independently of source changes.
